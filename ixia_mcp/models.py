@@ -104,6 +104,51 @@ class GetPortStatusInput(ConnectionIdInput):
     )
 
 
+class AddPortsInput(ConnectionIdInput):
+    """Parameters for adding virtual ports with chassis assignment."""
+
+    chassis_ip: str = Field(
+        ...,
+        description="IP address of the Ixia chassis.",
+    )
+    card_port_pairs: list[list[int]] = Field(
+        ...,
+        description=(
+            "List of [card, port] pairs to assign. "
+            "Example: [[1, 3], [1, 4]] for card 1 ports 3 and 4."
+        ),
+    )
+    port_names: Optional[list[str]] = Field(
+        default=None,
+        description=(
+            "Optional names for each port. Must match length of card_port_pairs. "
+            "If omitted, ports are named 'Port 1', 'Port 2', etc."
+        ),
+    )
+    force_ownership: bool = Field(
+        default=True,
+        description="Force take ownership of ports if already owned by another user.",
+    )
+
+
+class ReleasePortsInput(ConnectionIdInput):
+    """Parameters for releasing hardware ports."""
+
+    port_names: Optional[list[str]] = Field(
+        default=None,
+        description="Port names to release. If omitted, releases all ports.",
+    )
+
+
+class RemovePortsInput(ConnectionIdInput):
+    """Parameters for removing virtual ports from the config."""
+
+    port_names: Optional[list[str]] = Field(
+        default=None,
+        description="Port names to remove. If omitted, removes all virtual ports.",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Topology & protocol tools
 # ---------------------------------------------------------------------------
@@ -161,6 +206,353 @@ class StopProtocolsInput(ConnectionIdInput):
             "Stop protocols only for this topology. "
             "If omitted, stops all protocols."
         ),
+    )
+
+
+class CreateTopologyInput(ConnectionIdInput):
+    """Parameters for creating a topology."""
+
+    name: str = Field(
+        ...,
+        description="Name for the new topology.",
+    )
+    port_names: list[str] = Field(
+        ...,
+        description="Virtual port name(s) to assign to this topology.",
+    )
+
+
+class DeleteTopologyInput(ConnectionIdInput):
+    """Parameters for deleting a topology."""
+
+    topology_name: str = Field(
+        ...,
+        description="Name of the topology to delete.",
+    )
+
+
+class UpdateTopologyInput(ConnectionIdInput):
+    """Parameters for updating a topology."""
+
+    topology_name: str = Field(
+        ...,
+        description="Name of the topology to update.",
+    )
+    new_name: Optional[str] = Field(
+        default=None,
+        description="New name for the topology.",
+    )
+    port_names: Optional[list[str]] = Field(
+        default=None,
+        description="New list of virtual port names to assign (replaces existing).",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Device group tools
+# ---------------------------------------------------------------------------
+
+
+class CreateDeviceGroupInput(ConnectionIdInput):
+    """Parameters for creating a device group."""
+
+    topology_name: str = Field(
+        ...,
+        description="Name of the parent topology.",
+    )
+    name: str = Field(
+        ...,
+        description="Name for the new device group.",
+    )
+    multiplier: int = Field(
+        default=1,
+        description="Number of simulated devices (default: 1).",
+        ge=1,
+    )
+
+
+class DeleteDeviceGroupInput(ConnectionIdInput):
+    """Parameters for deleting a device group."""
+
+    topology_name: str = Field(
+        ...,
+        description="Name of the parent topology.",
+    )
+    device_group_name: str = Field(
+        ...,
+        description="Name of the device group to delete.",
+    )
+
+
+class UpdateDeviceGroupInput(ConnectionIdInput):
+    """Parameters for updating a device group."""
+
+    topology_name: str = Field(
+        ...,
+        description="Name of the parent topology.",
+    )
+    device_group_name: str = Field(
+        ...,
+        description="Name of the device group to update.",
+    )
+    new_name: Optional[str] = Field(
+        default=None,
+        description="New name for the device group.",
+    )
+    multiplier: Optional[int] = Field(
+        default=None,
+        description="New multiplier (number of simulated devices).",
+        ge=1,
+    )
+    enabled: Optional[bool] = Field(
+        default=None,
+        description="Enable or disable the device group.",
+    )
+
+
+class CreateNetworkGroupInput(ConnectionIdInput):
+    """Parameters for creating a network group (route advertisement)."""
+
+    topology_name: str = Field(
+        ...,
+        description="Name of the parent topology.",
+    )
+    device_group_name: str = Field(
+        ...,
+        description="Name of the parent device group.",
+    )
+    name: str = Field(
+        default="Network Group 1",
+        description="Name for the network group.",
+    )
+    multiplier: int = Field(
+        default=1,
+        description="Number of route prefixes to advertise.",
+        ge=1,
+    )
+    ipv4_network_address: Optional[str] = Field(
+        default=None,
+        description="Starting IPv4 network address (e.g. '200.1.0.0').",
+    )
+    ipv4_prefix_length: Optional[int] = Field(
+        default=None,
+        description="IPv4 prefix length (e.g. 24).",
+        ge=1,
+        le=32,
+    )
+    ipv4_prefix_step: Optional[str] = Field(
+        default=None,
+        description="IPv4 prefix step between routes (e.g. '0.1.0.0').",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Protocol stack tools
+# ---------------------------------------------------------------------------
+
+
+class AddProtocolInput(ConnectionIdInput):
+    """Parameters for adding a protocol stack to a device group."""
+
+    topology_name: str = Field(
+        ...,
+        description="Name of the parent topology.",
+    )
+    device_group_name: str = Field(
+        ...,
+        description="Name of the device group.",
+    )
+    protocol: str = Field(
+        ...,
+        description=(
+            "Protocol to add. Supported: 'ethernet', 'ipv4', 'ipv6', "
+            "'bgpv4' (BGP IPv4 peer), 'bgpv6' (BGP IPv6 peer), "
+            "'ospfv2', 'ospfv3', 'isis', 'ldp', 'igmp', 'pim'."
+        ),
+    )
+
+
+class RemoveProtocolInput(ConnectionIdInput):
+    """Parameters for removing a protocol stack from a device group."""
+
+    topology_name: str = Field(
+        ...,
+        description="Name of the parent topology.",
+    )
+    device_group_name: str = Field(
+        ...,
+        description="Name of the device group.",
+    )
+    protocol: str = Field(
+        ...,
+        description=(
+            "Protocol to remove. Same names as ixia_add_protocol: "
+            "'ethernet', 'ipv4', 'ipv6', 'bgpv4', 'bgpv6', "
+            "'ospfv2', 'ospfv3', 'isis', 'ldp', 'igmp', 'pim'."
+        ),
+    )
+
+
+class ConfigureEthernetInput(ConnectionIdInput):
+    """Parameters for configuring Ethernet on a device group."""
+
+    topology_name: str = Field(
+        ...,
+        description="Name of the parent topology.",
+    )
+    device_group_name: str = Field(
+        ...,
+        description="Name of the device group.",
+    )
+    mac_address: Optional[str] = Field(
+        default=None,
+        description="Starting MAC address (e.g. '00:11:22:33:44:55').",
+    )
+    mac_step: Optional[str] = Field(
+        default=None,
+        description="MAC increment step (default: '00:00:00:00:00:01').",
+    )
+    mtu: Optional[int] = Field(
+        default=None,
+        description="MTU size.",
+        ge=64,
+        le=14000,
+    )
+    vlan_enabled: Optional[bool] = Field(
+        default=None,
+        description="Enable or disable VLAN tagging.",
+    )
+    vlan_id: Optional[int] = Field(
+        default=None,
+        description="VLAN ID (1-4094).",
+        ge=1,
+        le=4094,
+    )
+    vlan_id_step: Optional[int] = Field(
+        default=None,
+        description="VLAN ID increment step (default: 0 = same VLAN for all).",
+        ge=0,
+    )
+    vlan_priority: Optional[int] = Field(
+        default=None,
+        description="VLAN priority (0-7).",
+        ge=0,
+        le=7,
+    )
+
+
+class ConfigureIpv4Input(ConnectionIdInput):
+    """Parameters for configuring IPv4 on a device group."""
+
+    topology_name: str = Field(
+        ...,
+        description="Name of the parent topology.",
+    )
+    device_group_name: str = Field(
+        ...,
+        description="Name of the device group.",
+    )
+    address: Optional[str] = Field(
+        default=None,
+        description="Starting IPv4 address (e.g. '1.1.1.1').",
+    )
+    address_step: Optional[str] = Field(
+        default=None,
+        description="Address increment step (default: '0.0.0.1').",
+    )
+    gateway: Optional[str] = Field(
+        default=None,
+        description="Gateway IPv4 address (e.g. '1.1.1.254').",
+    )
+    gateway_step: Optional[str] = Field(
+        default=None,
+        description="Gateway increment step (default: '0.0.0.0').",
+    )
+    prefix_length: Optional[int] = Field(
+        default=None,
+        description="Subnet prefix length (e.g. 24).",
+        ge=1,
+        le=32,
+    )
+
+
+class ConfigureIpv6Input(ConnectionIdInput):
+    """Parameters for configuring IPv6 on a device group."""
+
+    topology_name: str = Field(
+        ...,
+        description="Name of the parent topology.",
+    )
+    device_group_name: str = Field(
+        ...,
+        description="Name of the device group.",
+    )
+    address: Optional[str] = Field(
+        default=None,
+        description="Starting IPv6 address (e.g. '2001:db8::1').",
+    )
+    address_step: Optional[str] = Field(
+        default=None,
+        description="Address increment step (default: '::1').",
+    )
+    gateway: Optional[str] = Field(
+        default=None,
+        description="Gateway IPv6 address.",
+    )
+    gateway_step: Optional[str] = Field(
+        default=None,
+        description="Gateway increment step (default: '::0').",
+    )
+    prefix_length: Optional[int] = Field(
+        default=None,
+        description="Subnet prefix length (e.g. 64).",
+        ge=1,
+        le=128,
+    )
+
+
+class ConfigureBgpInput(ConnectionIdInput):
+    """Parameters for configuring BGP on a device group."""
+
+    topology_name: str = Field(
+        ...,
+        description="Name of the parent topology.",
+    )
+    device_group_name: str = Field(
+        ...,
+        description="Name of the device group.",
+    )
+    ip_version: str = Field(
+        default="ipv4",
+        description="IP version: 'ipv4' or 'ipv6'.",
+    )
+    dut_ip: Optional[str] = Field(
+        default=None,
+        description="DUT (neighbor) IP address.",
+    )
+    dut_ip_step: Optional[str] = Field(
+        default=None,
+        description="DUT IP increment step.",
+    )
+    local_as: Optional[int] = Field(
+        default=None,
+        description="Local AS number (2-byte).",
+        ge=1,
+        le=65535,
+    )
+    bgp_type: Optional[str] = Field(
+        default=None,
+        description="BGP type: 'internal' or 'external'.",
+    )
+    hold_timer: Optional[int] = Field(
+        default=None,
+        description="BGP hold timer in seconds.",
+        ge=0,
+    )
+    update_interval: Optional[int] = Field(
+        default=None,
+        description="BGP update interval in seconds.",
+        ge=0,
     )
 
 
@@ -236,6 +628,109 @@ class StopTrafficInput(ConnectionIdInput):
     )
 
 
+class CreateTrafficItemInput(ConnectionIdInput):
+    """Parameters for creating a traffic item."""
+
+    name: str = Field(
+        ...,
+        description="Name for the new traffic item.",
+    )
+    traffic_type: str = Field(
+        default="ipv4",
+        description="Traffic type: 'ipv4', 'ipv6', 'ethernet', etc.",
+    )
+    source: str = Field(
+        ...,
+        description="Source topology or device group name.",
+    )
+    destination: str = Field(
+        ...,
+        description="Destination topology or device group name.",
+    )
+    bidirectional: bool = Field(
+        default=False,
+        description="Create bidirectional traffic flow.",
+    )
+
+
+class DeleteTrafficItemInput(ConnectionIdInput):
+    """Parameters for deleting a traffic item."""
+
+    traffic_item_name: Optional[str] = Field(
+        default=None,
+        description="Name of the traffic item to delete.",
+    )
+    traffic_item_index: Optional[int] = Field(
+        default=None,
+        description="1-based index of the traffic item to delete.",
+        ge=1,
+    )
+
+
+class ConfigureTrafficItemInput(ConnectionIdInput):
+    """Parameters for configuring a traffic item's rate, size, and transmission."""
+
+    traffic_item_name: Optional[str] = Field(
+        default=None,
+        description="Traffic item name to configure.",
+    )
+    traffic_item_index: Optional[int] = Field(
+        default=None,
+        description="1-based traffic item index. Alternative to traffic_item_name.",
+        ge=1,
+    )
+    frame_rate: Optional[float] = Field(
+        default=None,
+        description="Frame rate value (interpretation depends on frame_rate_type).",
+    )
+    frame_rate_type: Optional[str] = Field(
+        default=None,
+        description="Rate type: 'percentLineRate', 'framesPerSecond', or 'bitsPerSecond'.",
+    )
+    frame_size: Optional[int] = Field(
+        default=None,
+        description="Fixed frame size in bytes.",
+        ge=64,
+        le=16383,
+    )
+    transmission_type: Optional[str] = Field(
+        default=None,
+        description="Transmission control: 'continuous', 'fixedFrameCount', or 'fixedDuration'.",
+    )
+    frame_count: Optional[int] = Field(
+        default=None,
+        description="Number of frames (for fixedFrameCount transmission).",
+        ge=1,
+    )
+    duration: Optional[int] = Field(
+        default=None,
+        description="Duration in seconds (for fixedDuration transmission).",
+        ge=1,
+    )
+
+
+class AddTrackingInput(ConnectionIdInput):
+    """Parameters for adding flow tracking to a traffic item."""
+
+    traffic_item_name: Optional[str] = Field(
+        default=None,
+        description="Traffic item name.",
+    )
+    traffic_item_index: Optional[int] = Field(
+        default=None,
+        description="1-based traffic item index. Alternative to traffic_item_name.",
+        ge=1,
+    )
+    tracking_fields: list[str] = Field(
+        ...,
+        description=(
+            "Tracking field names to enable. Common values: "
+            "'trackerName', 'sourceDestEndpointPair0', "
+            "'sourceDestValuePair0', 'flowGroup0'."
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Statistics tools
 # ---------------------------------------------------------------------------
@@ -278,4 +773,27 @@ class ClearStatisticsInput(ConnectionIdInput):
             "'traffic' (port and traffic stats only), "
             "or 'protocol' (protocol stats only)."
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Config management tools
+# ---------------------------------------------------------------------------
+
+
+class SaveConfigInput(ConnectionIdInput):
+    """Parameters for saving the IxNetwork config."""
+
+    file_path: str = Field(
+        ...,
+        description="File path on the IxNetwork server to save to (e.g. 'C:/configs/my_test.ixncfg').",
+    )
+
+
+class LoadConfigInput(ConnectionIdInput):
+    """Parameters for loading an IxNetwork config."""
+
+    file_path: str = Field(
+        ...,
+        description="File path on the IxNetwork server to load from (e.g. 'C:/configs/my_test.ixncfg').",
     )

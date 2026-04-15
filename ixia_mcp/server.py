@@ -15,7 +15,7 @@ import sys
 from mcp.server.fastmcp import FastMCP
 
 from ixia_mcp.client import ConnectionManager
-from ixia_mcp.tools import session, ports, topology, traffic, statistics
+from ixia_mcp.tools import session, ports, topology, protocols, traffic, statistics, config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -78,8 +78,10 @@ def _build_server(args: argparse.Namespace) -> tuple[FastMCP, ConnectionManager]
     session.register(mcp, manager)
     ports.register(mcp, manager)
     topology.register(mcp, manager)
+    protocols.register(mcp, manager)
     traffic.register(mcp, manager)
     statistics.register(mcp, manager)
+    config.register(mcp, manager)
 
     return mcp, manager
 

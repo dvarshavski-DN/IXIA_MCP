@@ -1,4 +1,4 @@
-"""Traffic tools: list, details, generate, start, stop."""
+"""Traffic tools: list, details, generate, start, stop, create, delete, configure, tracking."""
 
 from __future__ import annotations
 
@@ -12,6 +12,10 @@ from ixia_mcp.models import (
     GenerateTrafficInput,
     StartTrafficInput,
     StopTrafficInput,
+    CreateTrafficItemInput,
+    DeleteTrafficItemInput,
+    ConfigureTrafficItemInput,
+    AddTrackingInput,
     ResponseFormat,
 )
 
@@ -87,8 +91,28 @@ def _find_traffic_item(traffic, *, name: str | None = None, index: int | None = 
     return None, "No traffic_item_name or traffic_item_index provided."
 
 
+def _find_endpoint_href(ix, name: str) -> str | None:
+    """Resolve a topology or device group name to its href for traffic endpoints."""
+    # Try topology first
+    topos = ix.Topology.find(Name=name)
+    if len(topos) > 0:
+        return topos[0].href
+
+    # Try device group inside any topology
+    for topo in ix.Topology.find():
+        dgs = topo.DeviceGroup.find(Name=name)
+        if len(dgs) > 0:
+            return dgs[0].href
+
+    return None
+
+
 def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
     """Register traffic tools."""
+
+    # ------------------------------------------------------------------
+    # Read tools
+    # ------------------------------------------------------------------
 
     @mcp.tool(
         name="ixia_list_traffic_items",
@@ -216,6 +240,10 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
 
         except Exception as e:
             return _handle_error(e)
+
+    # ------------------------------------------------------------------
+    # Action tools (existing)
+    # ------------------------------------------------------------------
 
     @mcp.tool(
         name="ixia_generate_traffic",
@@ -366,6 +394,239 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
             if was_suspended:
                 return f"Traffic item '{label}' was already suspended."
             return f"Traffic item '{label}' suspended successfully."
+
+        except Exception as e:
+            return _handle_error(e)
+
+    # ------------------------------------------------------------------
+    # Configuration tools (new)
+    # ------------------------------------------------------------------
+
+    @mcp.tool(
+        name="ixia_create_traffic_item",
+        annotations={
+            "title": "Create Traffic Item",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    )
+    async def ixia_create_traffic_item(params: CreateTrafficItemInput) -> str:
+        """Create a new traffic item with source and destination endpoints.
+
+        Endpoints can be topology names or device group names. The traffic
+        type determines the layer (ipv4, ipv6, ethernet, etc.).
+
+        Returns:
+            str: Confirmation with traffic item name or error.
+        """
+        try:
+            def _run():
+                conn = manager.get(params.connection_id)
+                ix = conn.ixnetwork
+
+                src_href = _find_endpoint_href(ix, params.source)
+                if src_href is None:
+                    return f"Source '{params.source}' not found as topology or device group."
+
+                dst_href = _find_endpoint_href(ix, params.destination)
+                if dst_href is None:
+                    return f"Destination '{params.destination}' not found as topology or device group."
+
+                ti = ix.Traffic.TrafficItem.add(
+                    Name=params.name,
+                    TrafficType=params.traffic_type,
+                    BiDirectional=params.bidirectional,
+                )
+                ti.EndpointSet.add(
+                    Sources=src_href,
+                    Destinations=dst_href,
+                )
+                return {
+                    "name": getattr(ti, "Name", params.name),
+                    "type": params.traffic_type,
+                    "bidirectional": params.bidirectional,
+                }
+
+            result = await asyncio.to_thread(_run)
+
+            if isinstance(result, str):
+                return f"Error: {result}"
+
+            bidir = " (bidirectional)" if result["bidirectional"] else ""
+            return (
+                f"Traffic item **{result['name']}** created "
+                f"(type: {result['type']}{bidir}), "
+                f"source: '{params.source}' -> destination: '{params.destination}'."
+            )
+
+        except Exception as e:
+            return _handle_error(e)
+
+    @mcp.tool(
+        name="ixia_delete_traffic_item",
+        annotations={
+            "title": "Delete Traffic Item",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def ixia_delete_traffic_item(params: DeleteTrafficItemInput) -> str:
+        """Delete a traffic item by name or index.
+
+        Returns:
+            str: Confirmation or error.
+        """
+        try:
+            def _run():
+                conn = manager.get(params.connection_id)
+                traffic = conn.ixnetwork.Traffic
+                ti, label = _find_traffic_item(
+                    traffic, name=params.traffic_item_name, index=params.traffic_item_index
+                )
+                if ti is None:
+                    return label
+                ti.remove()
+                return None, label
+
+            result = await asyncio.to_thread(_run)
+
+            if isinstance(result, str):
+                return f"Error: {result}"
+
+            _, label = result
+            return f"Traffic item '{label}' deleted."
+
+        except Exception as e:
+            return _handle_error(e)
+
+    @mcp.tool(
+        name="ixia_configure_traffic_item",
+        annotations={
+            "title": "Configure Traffic Item",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def ixia_configure_traffic_item(params: ConfigureTrafficItemInput) -> str:
+        """Configure frame rate, frame size, and transmission control on a traffic item.
+
+        Only provided fields are modified; omitted fields remain unchanged.
+        After configuring, use ixia_generate_traffic then ixia_start_traffic.
+
+        Returns:
+            str: Summary of configured properties or error.
+        """
+        try:
+            def _run():
+                conn = manager.get(params.connection_id)
+                traffic = conn.ixnetwork.Traffic
+                ti, label = _find_traffic_item(
+                    traffic, name=params.traffic_item_name, index=params.traffic_item_index
+                )
+                if ti is None:
+                    return label
+
+                ce_list = ti.ConfigElement.find()
+                if len(ce_list) == 0:
+                    return f"Traffic item '{label}' has no config elements."
+                ce = ce_list[0]
+
+                changes = []
+
+                if params.frame_rate_type is not None:
+                    ce.FrameRate.Type = params.frame_rate_type
+                    changes.append(f"rate type: {params.frame_rate_type}")
+
+                if params.frame_rate is not None:
+                    ce.FrameRate.Rate = params.frame_rate
+                    changes.append(f"rate: {params.frame_rate}")
+
+                if params.frame_size is not None:
+                    ce.FrameSize.Type = "fixed"
+                    ce.FrameSize.FixedSize = params.frame_size
+                    changes.append(f"frame size: {params.frame_size} bytes")
+
+                if params.transmission_type is not None:
+                    ce.TransmissionControl.Type = params.transmission_type
+                    changes.append(f"transmission: {params.transmission_type}")
+
+                if params.frame_count is not None:
+                    ce.TransmissionControl.FrameCount = params.frame_count
+                    changes.append(f"frame count: {params.frame_count}")
+
+                if params.duration is not None:
+                    ce.TransmissionControl.Duration = params.duration
+                    changes.append(f"duration: {params.duration}s")
+
+                if not changes:
+                    return "nothing"
+                return label, changes
+
+            result = await asyncio.to_thread(_run)
+
+            if isinstance(result, str):
+                if result == "nothing":
+                    return "No changes specified."
+                return f"Error: {result}"
+
+            label, changes = result
+            return f"Traffic item '{label}' configured: {'; '.join(changes)}."
+
+        except Exception as e:
+            return _handle_error(e)
+
+    @mcp.tool(
+        name="ixia_add_tracking",
+        annotations={
+            "title": "Add Flow Tracking",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def ixia_add_tracking(params: AddTrackingInput) -> str:
+        """Add flow tracking fields to a traffic item.
+
+        Tracking enables per-flow statistics in the Flow Statistics view.
+        Must be set before starting traffic.
+
+        Returns:
+            str: Confirmation or error.
+        """
+        try:
+            def _run():
+                conn = manager.get(params.connection_id)
+                traffic = conn.ixnetwork.Traffic
+                ti, label = _find_traffic_item(
+                    traffic, name=params.traffic_item_name, index=params.traffic_item_index
+                )
+                if ti is None:
+                    return label
+
+                tracking = ti.Tracking.find()
+                if len(tracking) == 0:
+                    return f"Traffic item '{label}' has no tracking object."
+
+                tracking[0].TrackBy = params.tracking_fields
+                return label, params.tracking_fields
+
+            result = await asyncio.to_thread(_run)
+
+            if isinstance(result, str):
+                return f"Error: {result}"
+
+            label, fields = result
+            return (
+                f"Tracking set on traffic item '{label}': "
+                f"{', '.join(fields)}."
+            )
 
         except Exception as e:
             return _handle_error(e)
