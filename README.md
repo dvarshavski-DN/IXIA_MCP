@@ -53,7 +53,7 @@ The server runs on a remote machine accessible to all users. Each user's agent c
 | `ixia_get_traffic_statistics` | Traffic item level counters and loss |
 | `ixia_get_flow_statistics` | Per-flow granular statistics |
 
-## Setup (Server Side)
+## Setup
 
 ### Prerequisites
 
@@ -74,36 +74,73 @@ uv sync
 pip install -e .
 ```
 
-### Environment Variables (optional defaults)
+### IDE Configuration (Cursor / Claude Code / Windsurf)
 
-Set these so agents don't need to pass credentials every time:
+Add the IXIA MCP server to your IDE's MCP configuration. The IxNetwork connection details are set once here — agents never need to specify them manually.
 
-```bash
-export IXIA_HOST="10.x.x.x"        # IxNetwork API server IP
-export IXIA_PORT="11009"            # REST API port (default: 11009 for Windows GUI)
-export IXIA_SESSION_ID="1"          # Default session ID
-export IXIA_USER="admin"            # Username
-export IXIA_PASSWORD="admin"        # Password
+**Cursor** — `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "ixia": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory", "/path/to/IXIA_MCP",
+        "ixia-mcp",
+        "--ixia-host", "10.x.x.x",
+        "--ixia-port", "11009",
+        "--ixia-session-id", "1"
+      ]
+    }
+  }
+}
 ```
 
-### Run the Server
+**Claude Code** — `~/.claude/settings.json` or project `.mcp.json`:
 
-```bash
-# Using uv
-uv run ixia-mcp
-
-# Or directly
-python -m ixia_mcp.server
-
-# Or using the installed script
-ixia-mcp
+```json
+{
+  "mcpServers": {
+    "ixia": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory", "/path/to/IXIA_MCP",
+        "ixia-mcp",
+        "--ixia-host", "10.x.x.x",
+        "--ixia-port", "11009",
+        "--ixia-session-id", "1"
+      ]
+    }
+  }
+}
 ```
 
-The server starts on `http://0.0.0.0:8080/mcp` with Streamable HTTP transport.
+Replace `/path/to/IXIA_MCP` with the actual path and `10.x.x.x` with your IxNetwork API server IP.
 
-## Setup (Client Side — Cursor)
+#### All CLI options
 
-Each user adds this to their Cursor MCP configuration (Settings > MCP Servers, or `.cursor/mcp.json`):
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--ixia-host` | IxNetwork API server IP | `IXIA_HOST` env var or `127.0.0.1` |
+| `--ixia-port` | REST API port | `IXIA_PORT` env var or `11009` |
+| `--ixia-session-id` | Session ID to attach to | `IXIA_SESSION_ID` env var or `1` |
+| `--ixia-user` | Username | `IXIA_USER` env var or `admin` |
+| `--ixia-password` | Password | `IXIA_PASSWORD` env var or `admin` |
+| `--transport` | `stdio` (default) or `streamable-http` | `stdio` |
+| `--server-port` | HTTP listen port (only for `streamable-http`) | `8080` |
+
+### Alternative: Shared HTTP Server
+
+For a shared server that multiple users connect to over the network:
+
+```bash
+uv run ixia-mcp --transport streamable-http --ixia-host 10.x.x.x --ixia-port 11009
+```
+
+Then in each user's IDE config:
 
 ```json
 {
@@ -114,8 +151,6 @@ Each user adds this to their Cursor MCP configuration (Settings > MCP Servers, o
   }
 }
 ```
-
-Replace `<server-ip>` with the IP or hostname of the machine running the MCP server.
 
 ## Usage Example
 
