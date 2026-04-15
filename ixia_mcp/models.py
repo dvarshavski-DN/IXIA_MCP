@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ResponseFormat(str, Enum):
@@ -543,7 +543,7 @@ class ConfigureBgpInput(ConnectionIdInput):
     )
     local_as: Optional[int] = Field(
         default=None,
-        description="Local AS number (2-byte).",
+        description="Local AS number, 2-byte range only (1-65535). For 4-byte AS numbers use the IxNetwork GUI.",
         ge=1,
         le=65535,
     )
@@ -689,6 +689,12 @@ class DeleteTrafficItemInput(ConnectionIdInput):
         ge=1,
     )
 
+    @model_validator(mode="after")
+    def check_identifier(self):
+        if self.traffic_item_name is None and self.traffic_item_index is None:
+            raise ValueError("Provide either traffic_item_name or traffic_item_index.")
+        return self
+
 
 class ConfigureTrafficItemInput(ConnectionIdInput):
     """Parameters for configuring a traffic item's rate, size, and transmission."""
@@ -702,6 +708,13 @@ class ConfigureTrafficItemInput(ConnectionIdInput):
         description="1-based traffic item index. Alternative to traffic_item_name.",
         ge=1,
     )
+
+    @model_validator(mode="after")
+    def check_identifier(self):
+        if self.traffic_item_name is None and self.traffic_item_index is None:
+            raise ValueError("Provide either traffic_item_name or traffic_item_index.")
+        return self
+
     frame_rate: Optional[float] = Field(
         default=None,
         description="Frame rate value (interpretation depends on frame_rate_type).",
@@ -744,6 +757,13 @@ class AddTrackingInput(ConnectionIdInput):
         description="1-based traffic item index. Alternative to traffic_item_name.",
         ge=1,
     )
+
+    @model_validator(mode="after")
+    def check_identifier(self):
+        if self.traffic_item_name is None and self.traffic_item_index is None:
+            raise ValueError("Provide either traffic_item_name or traffic_item_index.")
+        return self
+
     tracking_fields: list[str] = Field(
         ...,
         description=(

@@ -292,10 +292,13 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
                         changes.append(f"VLAN ID: {params.vlan_id} (step: {step})")
 
                 if params.vlan_priority is not None:
+                    eth.EnableVlans.Single(True)
                     vlan = eth.Vlan.find()
                     if len(vlan) > 0:
                         vlan[0].Priority.Single(params.vlan_priority)
                         changes.append(f"VLAN priority: {params.vlan_priority}")
+                    else:
+                        changes.append("Warning: VLAN priority requested but no VLAN object found")
 
                 if not changes:
                     return "nothing"

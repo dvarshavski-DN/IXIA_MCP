@@ -485,16 +485,16 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
                     traffic, name=params.traffic_item_name, index=params.traffic_item_index
                 )
                 if ti is None:
-                    return label
+                    return label  # error string
                 ti.remove()
-                return None, label
+                return None  # success
 
             result = await asyncio.to_thread(_run)
 
             if isinstance(result, str):
                 return f"Error: {result}"
 
-            _, label = result
+            label = params.traffic_item_name or f"#{params.traffic_item_index}"
             return f"Traffic item '{label}' deleted."
 
         except Exception as e:

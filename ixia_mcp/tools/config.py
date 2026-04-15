@@ -74,7 +74,6 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
             def _run():
                 conn = manager.get(params.connection_id)
                 from ixnetwork_restpy.files import Files
-                conn.ixnetwork.NewConfig()
                 conn.ixnetwork.LoadConfig(Files(params.file_path, local_file=False))
                 return None
 

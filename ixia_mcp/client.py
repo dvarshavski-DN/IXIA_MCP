@@ -33,7 +33,7 @@ class IxNetworkConnection:
 
 
 class ConnectionManager:
-    """Thread-safe pool of IxNetwork connections."""
+    """Pool of IxNetwork connections."""
 
     def __init__(
         self,
@@ -46,11 +46,11 @@ class ConnectionManager:
     ) -> None:
         self._connections: dict[str, IxNetworkConnection] = {}
         # CLI args > env vars > hardcoded defaults
-        self._default_host = default_host or os.environ.get("IXIA_HOST", "127.0.0.1")
-        self._default_port = default_port or int(os.environ.get("IXIA_PORT", "11009"))
-        self._default_session_id = default_session_id or int(os.environ.get("IXIA_SESSION_ID", "1"))
-        self._default_user = default_user or os.environ.get("IXIA_USER", "admin")
-        self._default_password = default_password or os.environ.get("IXIA_PASSWORD", "admin")
+        self._default_host = default_host if default_host is not None else os.environ.get("IXIA_HOST", "127.0.0.1")
+        self._default_port = default_port if default_port is not None else int(os.environ.get("IXIA_PORT", "11009"))
+        self._default_session_id = default_session_id if default_session_id is not None else int(os.environ.get("IXIA_SESSION_ID", "1"))
+        self._default_user = default_user if default_user is not None else os.environ.get("IXIA_USER", "admin")
+        self._default_password = default_password if default_password is not None else os.environ.get("IXIA_PASSWORD", "admin")
 
     def connect(
         self,
@@ -68,11 +68,11 @@ class ConnectionManager:
             3. Environment variable (IXIA_HOST, IXIA_PORT, etc.)
             4. Hardcoded fallback
         """
-        host = host or self._default_host
-        rest_port = rest_port or self._default_port
-        session_id = session_id or self._default_session_id
-        username = username or self._default_user
-        password = password or self._default_password
+        host = host if host is not None else self._default_host
+        rest_port = rest_port if rest_port is not None else self._default_port
+        session_id = session_id if session_id is not None else self._default_session_id
+        username = username if username is not None else self._default_user
+        password = password if password is not None else self._default_password
 
         logger.info("Connecting to IxNetwork at %s:%d session %d", host, rest_port, session_id)
 
