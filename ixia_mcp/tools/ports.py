@@ -14,14 +14,11 @@ from ixia_mcp.models import (
     RemovePortsInput,
     ResponseFormat,
 )
+from ixia_mcp.tools._helpers import _handle_error
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from ixia_mcp.client import ConnectionManager
-
-
-def _handle_error(e: Exception) -> str:
-    return f"Error: {type(e).__name__}: {e}"
 
 
 def _vport_to_dict(vport) -> dict:

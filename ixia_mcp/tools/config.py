@@ -6,14 +6,11 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from ixia_mcp.models import SaveConfigInput, LoadConfigInput
+from ixia_mcp.tools._helpers import _handle_error
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from ixia_mcp.client import ConnectionManager
-
-
-def _handle_error(e: Exception) -> str:
-    return f"Error: {type(e).__name__}: {e}"
 
 
 def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
@@ -41,7 +38,7 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
             def _run():
                 conn = manager.get(params.connection_id)
                 from ixnetwork_restpy.files import Files
-                conn.ixnetwork.SaveAs(Files(params.file_path))
+                conn.ixnetwork.SaveAs(Files(params.file_path, local_file=False))
                 return None
 
             result = await asyncio.to_thread(_run)

@@ -21,14 +21,11 @@ from ixia_mcp.models import (
     CreateNetworkGroupInput,
     ResponseFormat,
 )
+from ixia_mcp.tools._helpers import _handle_error, _find_topo, _find_device_group
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from ixia_mcp.client import ConnectionManager
-
-
-def _handle_error(e: Exception) -> str:
-    return f"Error: {type(e).__name__}: {e}"
 
 
 def _topo_summary(topo) -> dict[str, Any]:
@@ -52,42 +49,56 @@ def _device_group_detail(dg) -> dict[str, Any]:
     }
 
     protocols: list[str] = []
-    for attr in ("Ethernet", "Ipv4", "Ipv6", "BgpIpv4Peer", "BgpIpv6Peer",
-                 "Ospfv2", "Ospfv3", "IsisL3", "Ldp", "Igmp", "Pim"):
-        try:
-            stack = getattr(dg, attr, None)
-            if stack is not None:
-                found = stack.find()
+
+    # L2: Ethernet lives directly on the device group
+    try:
+        eth_list = dg.Ethernet.find()
+    except Exception:
+        eth_list = []
+
+    if len(eth_list) > 0:
+        protocols.append("Ethernet")
+        eth = eth_list[0]
+
+        # L3 protocols on Ethernet
+        for l3_attr in ("Ipv4", "Ipv6", "IsisL3"):
+            try:
+                found = getattr(eth, l3_attr).find()
                 if len(found) > 0:
-                    protocols.append(attr)
+                    protocols.append(l3_attr)
+            except Exception:
+                pass
+
+        # L4+ protocols nested under IPv4
+        try:
+            ipv4_list = eth.Ipv4.find()
         except Exception:
-            pass
+            ipv4_list = []
+        if len(ipv4_list) > 0:
+            for l4_attr in ("BgpIpv4Peer", "Ospfv2", "LdpBasicRouter", "Igmp", "Pim"):
+                try:
+                    found = getattr(ipv4_list[0], l4_attr).find()
+                    if len(found) > 0:
+                        protocols.append(l4_attr)
+                except Exception:
+                    pass
+
+        # L4+ protocols nested under IPv6
+        try:
+            ipv6_list = eth.Ipv6.find()
+        except Exception:
+            ipv6_list = []
+        if len(ipv6_list) > 0:
+            for l4_attr in ("BgpIpv6Peer", "Ospfv3"):
+                try:
+                    found = getattr(ipv6_list[0], l4_attr).find()
+                    if len(found) > 0:
+                        protocols.append(l4_attr)
+                except Exception:
+                    pass
+
     result["protocols"] = protocols
     return result
-
-
-def _find_topo(ix, name: str):
-    """Find a topology by name. Returns (topo, None) or (None, error_msg)."""
-    topos = ix.Topology.find(Name=name)
-    if len(topos) == 0:
-        return None, f"No topology named '{name}' found. Use ixia_list_topologies to see available topologies."
-    return topos[0], None
-
-
-def _find_device_group(ix, topology_name: str, device_group_name: str):
-    """Find a device group by topology + DG name.
-    Returns (dg, None) or (None, error_msg).
-    """
-    topo, err = _find_topo(ix, topology_name)
-    if err:
-        return None, err
-    dgs = topo.DeviceGroup.find(Name=device_group_name)
-    if len(dgs) == 0:
-        return None, (
-            f"No device group named '{device_group_name}' in topology '{topology_name}'. "
-            "Use ixia_get_topology_details to see available device groups."
-        )
-    return dgs[0], None
 
 
 def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:

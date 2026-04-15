@@ -13,25 +13,11 @@ from ixia_mcp.models import (
     ConfigureIpv6Input,
     ConfigureBgpInput,
 )
+from ixia_mcp.tools._helpers import _handle_error, _find_device_group
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from ixia_mcp.client import ConnectionManager
-
-
-def _handle_error(e: Exception) -> str:
-    return f"Error: {type(e).__name__}: {e}"
-
-
-def _find_device_group(ix, topology_name: str, device_group_name: str):
-    """Find a device group by topology + DG name."""
-    topos = ix.Topology.find(Name=topology_name)
-    if len(topos) == 0:
-        return None, f"No topology named '{topology_name}' found."
-    dgs = topos[0].DeviceGroup.find(Name=device_group_name)
-    if len(dgs) == 0:
-        return None, f"No device group named '{device_group_name}' in topology '{topology_name}'."
-    return dgs[0], None
 
 
 # Maps user-friendly protocol names to (parent_attr, child_attr) tuples.
@@ -69,44 +55,24 @@ _PROTOCOL_DG_ATTR = {
 
 
 def _resolve_parent(dg, parent_attr: str):
-    """Walk the protocol stack to find the parent for a new protocol."""
+    """Walk the protocol stack to find the parent for a new protocol.
+
+    Chain: dg -> Ethernet -> Ipv4/Ipv6.  Returns the first instance of
+    *parent_attr* found along that chain, or None.
+    """
     if parent_attr == "__dg__":
         return dg
 
-    # Walk the stack: Ethernet lives on the DG, IPv4 lives on Ethernet, etc.
-    stack_chain = {
-        "Ethernet": [dg],
-        "Ipv4": [dg, "Ethernet"],
-        "Ipv6": [dg, "Ethernet"],
-    }
-
-    if parent_attr in stack_chain:
-        obj = stack_chain[parent_attr][0]
-        for attr in stack_chain[parent_attr][1:]:
-            found = getattr(obj, attr).find()
-            if len(found) == 0:
-                return None
-            obj = found[0]
-        # Now obj is the device group or the Ethernet; get parent_attr from it
-        if parent_attr == "Ethernet":
-            found = obj.Ethernet.find() if hasattr(obj, "Ethernet") and obj is dg else [obj]
-        else:
-            found = getattr(obj, parent_attr).find()
+    # Ethernet lives directly on the device group
+    if parent_attr == "Ethernet":
+        found = dg.Ethernet.find()
         return found[0] if len(found) > 0 else None
 
-    # For protocols directly on Ethernet / IPv4 / IPv6
-    # Try to find the parent by walking: dg -> Ethernet -> parent_attr
-    eth_stack = dg.Ethernet.find()
-    if len(eth_stack) == 0:
+    # Ipv4/Ipv6 live on Ethernet
+    eth = dg.Ethernet.find()
+    if len(eth) == 0:
         return None
-
-    if parent_attr == "Ethernet":
-        return eth_stack[0]
-
-    parent_stack = getattr(eth_stack[0], parent_attr, None)
-    if parent_stack is None:
-        return None
-    found = parent_stack.find()
+    found = getattr(eth[0], parent_attr).find()
     return found[0] if len(found) > 0 else None
 
 

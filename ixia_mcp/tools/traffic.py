@@ -18,14 +18,11 @@ from ixia_mcp.models import (
     AddTrackingInput,
     ResponseFormat,
 )
+from ixia_mcp.tools._helpers import _handle_error
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from ixia_mcp.client import ConnectionManager
-
-
-def _handle_error(e: Exception) -> str:
-    return f"Error: {type(e).__name__}: {e}"
 
 
 def _traffic_item_summary(ti) -> dict[str, Any]:
@@ -260,7 +257,7 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
 
         Calls Generate() on every traffic item, pushing ConfigElement
         settings down to HighLevelStream resources. This must be done
-        after any config change and before Apply + Start.
+        after any config change and before ixia_start_traffic.
 
         Returns:
             str: Summary of how many items were regenerated, or an error.
@@ -440,8 +437,8 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
                     BiDirectional=params.bidirectional,
                 )
                 ti.EndpointSet.add(
-                    Sources=src_href,
-                    Destinations=dst_href,
+                    Sources=[src_href],
+                    Destinations=[dst_href],
                 )
                 return {
                     "name": getattr(ti, "Name", params.name),

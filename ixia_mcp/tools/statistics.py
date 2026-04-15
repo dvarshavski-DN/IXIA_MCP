@@ -13,14 +13,11 @@ from ixia_mcp.models import (
     ClearStatisticsInput,
     ResponseFormat,
 )
+from ixia_mcp.tools._helpers import _handle_error
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from ixia_mcp.client import ConnectionManager
-
-
-def _handle_error(e: Exception) -> str:
-    return f"Error: {type(e).__name__}: {e}"
 
 
 def _stat_view_to_records(session_assistant, view_name: str) -> list[dict[str, Any]]:
@@ -189,6 +186,10 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
     )
     async def ixia_get_flow_statistics(params: FlowStatisticsInput) -> str:
         """Get per-flow statistics for granular traffic analysis.
+
+        Prerequisite: at least one tracking field must be enabled on each
+        traffic item via ixia_add_tracking before flow-level rows appear.
+        Without tracking, this view returns empty results.
 
         Returns per-flow counters including tracking values, Tx/Rx frames,
         loss percentage, and rates.

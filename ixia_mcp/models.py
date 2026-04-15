@@ -105,7 +105,10 @@ class GetPortStatusInput(ConnectionIdInput):
 
 
 class AddPortsInput(ConnectionIdInput):
-    """Parameters for adding virtual ports with chassis assignment."""
+    """Parameters for adding virtual ports with chassis assignment.
+
+    Next step: use ixia_create_topology to group these ports into topologies.
+    """
 
     chassis_ip: str = Field(
         ...,
@@ -352,7 +355,11 @@ class CreateNetworkGroupInput(ConnectionIdInput):
 
 
 class AddProtocolInput(ConnectionIdInput):
-    """Parameters for adding a protocol stack to a device group."""
+    """Parameters for adding a protocol stack to a device group.
+
+    Next step: use ixia_configure_ethernet / ixia_configure_ipv4 / ixia_configure_bgp
+    to set addresses and parameters on the new stack, then ixia_start_protocols.
+    """
 
     topology_name: str = Field(
         ...,
@@ -629,7 +636,11 @@ class StopTrafficInput(ConnectionIdInput):
 
 
 class CreateTrafficItemInput(ConnectionIdInput):
-    """Parameters for creating a traffic item."""
+    """Parameters for creating a traffic item.
+
+    Next step: use ixia_configure_traffic_item to set rate/size/duration,
+    then ixia_generate_traffic and ixia_start_traffic.
+    """
 
     name: str = Field(
         ...,
@@ -637,15 +648,27 @@ class CreateTrafficItemInput(ConnectionIdInput):
     )
     traffic_type: str = Field(
         default="ipv4",
-        description="Traffic type: 'ipv4', 'ipv6', 'ethernet', etc.",
+        description=(
+            "Traffic type that determines the protocol layer for the flow. "
+            "Allowed values: 'ipv4', 'ipv6', 'ethernet', 'raw', 'ethernetVlan'. "
+            "Must match a protocol stack already configured on the endpoints."
+        ),
     )
     source: str = Field(
         ...,
-        description="Source topology or device group name.",
+        description=(
+            "Name of the source topology or device group. "
+            "Traffic flows originate from the endpoints in this group. "
+            "The name must exactly match an existing topology or device group."
+        ),
     )
     destination: str = Field(
         ...,
-        description="Destination topology or device group name.",
+        description=(
+            "Name of the destination topology or device group. "
+            "Traffic flows are addressed to the endpoints in this group. "
+            "The name must exactly match an existing topology or device group."
+        ),
     )
     bidirectional: bool = Field(
         default=False,

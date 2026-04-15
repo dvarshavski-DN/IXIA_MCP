@@ -7,14 +7,11 @@ import json
 from typing import TYPE_CHECKING
 
 from ixia_mcp.models import ConnectInput, ConnectionIdInput, SessionInfoInput, ResponseFormat
+from ixia_mcp.tools._helpers import _handle_error
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from ixia_mcp.client import ConnectionManager
-
-
-def _handle_error(e: Exception) -> str:
-    return f"Error: {type(e).__name__}: {e}"
 
 
 def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
@@ -35,6 +32,20 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
 
         Returns a connection_id that must be passed to all subsequent tools.
         Connection parameters fall back to environment variables if not provided.
+
+        Canonical workflow after connecting:
+            1. ixia_connect → get connection_id
+            2. ixia_add_ports → assign chassis hardware ports
+            3. ixia_create_topology → group ports into topologies
+            4. ixia_create_device_group → add simulated devices
+            5. ixia_add_protocol → build protocol stacks (ethernet → ipv4 → bgp …)
+            6. ixia_configure_* → set addresses, AS numbers, etc.
+            7. ixia_start_protocols → bring sessions up
+            8. ixia_create_traffic_item → define traffic flows
+            9. ixia_configure_traffic_item → set rate, size, duration
+            10. ixia_generate_traffic → apply the traffic configuration
+            11. ixia_start_traffic → begin sending packets
+            12. ixia_get_flow_statistics → collect results
 
         Returns:
             str: JSON with connection_id, host, rest_port, session_id on success,
