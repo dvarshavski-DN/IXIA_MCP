@@ -1,5 +1,7 @@
 """Unit tests for ConnectionManager (no IxNetwork hardware required)."""
 
+import time
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -172,3 +174,43 @@ class TestMultipleConnections:
         assert manager.get(c2.connection_id) is c2
         with pytest.raises(KeyError):
             manager.get(c1.connection_id)
+
+
+# ---------------------------------------------------------------------------
+# Stale connection reaper
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectStale:
+    def test_reaps_idle_connections(self, manager, mock_session_assistant):
+        conn = manager.connect()
+        # Simulate the connection being idle for a long time
+        conn.last_used_at = time.time() - 7200
+        reaped = manager.disconnect_stale(max_idle_seconds=3600)
+        assert conn.connection_id in reaped
+        assert len(manager.list_connections()) == 0
+
+    def test_keeps_active_connections(self, manager, mock_session_assistant):
+        conn = manager.connect()
+        # Connection was just used
+        conn.last_used_at = time.time()
+        reaped = manager.disconnect_stale(max_idle_seconds=3600)
+        assert reaped == []
+        assert len(manager.list_connections()) == 1
+
+    def test_reaps_only_stale(self, manager, mock_session_assistant):
+        old = manager.connect()
+        new = manager.connect()
+        old.last_used_at = time.time() - 7200
+        new.last_used_at = time.time()
+        reaped = manager.disconnect_stale(max_idle_seconds=3600)
+        assert old.connection_id in reaped
+        assert new.connection_id not in reaped
+        assert len(manager.list_connections()) == 1
+
+    def test_uses_default_max_idle(self, mock_session_assistant):
+        m = ConnectionManager(max_idle_seconds=10)
+        conn = m.connect()
+        conn.last_used_at = time.time() - 20
+        reaped = m.disconnect_stale()
+        assert conn.connection_id in reaped
