@@ -117,16 +117,17 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _fetch():
                 conn = manager.get(params.connection_id)
-                ix = conn.ixnetwork
-                return {
-                    "connection_id": conn.connection_id,
-                    "host": conn.host,
-                    "session_id": conn.session_id,
-                    "build_number": getattr(ix, "BuildNumber", "N/A"),
-                    "virtual_ports": len(ix.Vport.find()),
-                    "topologies": len(ix.Topology.find()),
-                    "traffic_items": len(ix.Traffic.TrafficItem.find()),
-                }
+                with conn.lock:
+                    ix = conn.ixnetwork
+                    return {
+                        "connection_id": conn.connection_id,
+                        "host": conn.host,
+                        "session_id": conn.session_id,
+                        "build_number": getattr(ix, "BuildNumber", "N/A"),
+                        "virtual_ports": len(ix.Vport.find()),
+                        "topologies": len(ix.Topology.find()),
+                        "traffic_items": len(ix.Traffic.TrafficItem.find()),
+                    }
 
             info = await asyncio.to_thread(_fetch)
 

@@ -132,8 +132,9 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _fetch():
                 conn = manager.get(params.connection_id)
-                items = conn.ixnetwork.Traffic.TrafficItem.find()
-                return [_traffic_item_summary(ti) for ti in items]
+                with conn.lock:
+                    items = conn.ixnetwork.Traffic.TrafficItem.find()
+                    return [_traffic_item_summary(ti) for ti in items]
 
             summaries = await asyncio.to_thread(_fetch)
 
@@ -186,17 +187,18 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _fetch():
                 conn = manager.get(params.connection_id)
-                if params.traffic_item_name or params.traffic_item_index:
-                    traffic = conn.ixnetwork.Traffic
-                    ti, label = _find_traffic_item(
-                        traffic, name=params.traffic_item_name, index=params.traffic_item_index
-                    )
-                    if ti is None:
-                        return label  # error message
-                    return [_traffic_item_detail(ti)]
-                else:
-                    items = conn.ixnetwork.Traffic.TrafficItem.find()
-                    return [_traffic_item_summary(ti) for ti in items]
+                with conn.lock:
+                    if params.traffic_item_name or params.traffic_item_index:
+                        traffic = conn.ixnetwork.Traffic
+                        ti, label = _find_traffic_item(
+                            traffic, name=params.traffic_item_name, index=params.traffic_item_index
+                        )
+                        if ti is None:
+                            return label  # error message
+                        return [_traffic_item_detail(ti)]
+                    else:
+                        items = conn.ixnetwork.Traffic.TrafficItem.find()
+                        return [_traffic_item_summary(ti) for ti in items]
 
             details = await asyncio.to_thread(_fetch)
 
@@ -265,18 +267,19 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                items = conn.ixnetwork.Traffic.TrafficItem.find()
-                if len(items) == 0:
-                    return 0, 0, []
-                count = 0
-                errors = []
-                for ti in items:
-                    try:
-                        ti.Generate()
-                        count += 1
-                    except Exception as e:
-                        errors.append(f"{getattr(ti, 'Name', '?')}: {e}")
-                return count, len(items), errors
+                with conn.lock:
+                    items = conn.ixnetwork.Traffic.TrafficItem.find()
+                    if len(items) == 0:
+                        return 0, 0, []
+                    count = 0
+                    errors = []
+                    for ti in items:
+                        try:
+                            ti.Generate()
+                            count += 1
+                        except Exception as e:
+                            errors.append(f"{getattr(ti, 'Name', '?')}: {e}")
+                    return count, len(items), errors
 
             count, total, errors = await asyncio.to_thread(_run)
 
@@ -317,20 +320,21 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                traffic = conn.ixnetwork.Traffic
-                if params.traffic_item_name or params.traffic_item_index:
-                    ti, label = _find_traffic_item(
-                        traffic, name=params.traffic_item_name, index=params.traffic_item_index
-                    )
-                    if ti is None:
-                        return None, label
-                    was_suspended = getattr(ti, "Suspend", False)
-                    ti.Suspend = False
-                    return label, was_suspended
-                else:
-                    traffic.Apply()
-                    traffic.StartStatelessTrafficBlocking()
-                    return "__all__", None
+                with conn.lock:
+                    traffic = conn.ixnetwork.Traffic
+                    if params.traffic_item_name or params.traffic_item_index:
+                        ti, label = _find_traffic_item(
+                            traffic, name=params.traffic_item_name, index=params.traffic_item_index
+                        )
+                        if ti is None:
+                            return None, label
+                        was_suspended = getattr(ti, "Suspend", False)
+                        ti.Suspend = False
+                        return label, was_suspended
+                    else:
+                        traffic.Apply()
+                        traffic.StartStatelessTrafficBlocking()
+                        return "__all__", None
 
             label, was_suspended = await asyncio.to_thread(_run)
 
@@ -368,19 +372,20 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                traffic = conn.ixnetwork.Traffic
-                if params.traffic_item_name or params.traffic_item_index:
-                    ti, label = _find_traffic_item(
-                        traffic, name=params.traffic_item_name, index=params.traffic_item_index
-                    )
-                    if ti is None:
-                        return None, label
-                    was_suspended = getattr(ti, "Suspend", False)
-                    ti.Suspend = True
-                    return label, was_suspended
-                else:
-                    traffic.StopStatelessTrafficBlocking()
-                    return "__all__", None
+                with conn.lock:
+                    traffic = conn.ixnetwork.Traffic
+                    if params.traffic_item_name or params.traffic_item_index:
+                        ti, label = _find_traffic_item(
+                            traffic, name=params.traffic_item_name, index=params.traffic_item_index
+                        )
+                        if ti is None:
+                            return None, label
+                        was_suspended = getattr(ti, "Suspend", False)
+                        ti.Suspend = True
+                        return label, was_suspended
+                    else:
+                        traffic.StopStatelessTrafficBlocking()
+                        return "__all__", None
 
             label, was_suspended = await asyncio.to_thread(_run)
 
@@ -421,30 +426,31 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                ix = conn.ixnetwork
+                with conn.lock:
+                    ix = conn.ixnetwork
 
-                src_href = _find_endpoint_href(ix, params.source)
-                if src_href is None:
-                    return f"Source '{params.source}' not found as topology or device group."
+                    src_href = _find_endpoint_href(ix, params.source)
+                    if src_href is None:
+                        return f"Source '{params.source}' not found as topology or device group."
 
-                dst_href = _find_endpoint_href(ix, params.destination)
-                if dst_href is None:
-                    return f"Destination '{params.destination}' not found as topology or device group."
+                    dst_href = _find_endpoint_href(ix, params.destination)
+                    if dst_href is None:
+                        return f"Destination '{params.destination}' not found as topology or device group."
 
-                ti = ix.Traffic.TrafficItem.add(
-                    Name=params.name,
-                    TrafficType=params.traffic_type,
-                    BiDirectional=params.bidirectional,
-                )
-                ti.EndpointSet.add(
-                    Sources=[src_href],
-                    Destinations=[dst_href],
-                )
-                return {
-                    "name": getattr(ti, "Name", params.name),
-                    "type": params.traffic_type,
-                    "bidirectional": params.bidirectional,
-                }
+                    ti = ix.Traffic.TrafficItem.add(
+                        Name=params.name,
+                        TrafficType=params.traffic_type,
+                        BiDirectional=params.bidirectional,
+                    )
+                    ti.EndpointSet.add(
+                        Sources=[src_href],
+                        Destinations=[dst_href],
+                    )
+                    return {
+                        "name": getattr(ti, "Name", params.name),
+                        "type": params.traffic_type,
+                        "bidirectional": params.bidirectional,
+                    }
 
             result = await asyncio.to_thread(_run)
 
@@ -480,14 +486,15 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                traffic = conn.ixnetwork.Traffic
-                ti, label = _find_traffic_item(
-                    traffic, name=params.traffic_item_name, index=params.traffic_item_index
-                )
-                if ti is None:
-                    return label  # error string
-                ti.remove()
-                return None  # success
+                with conn.lock:
+                    traffic = conn.ixnetwork.Traffic
+                    ti, label = _find_traffic_item(
+                        traffic, name=params.traffic_item_name, index=params.traffic_item_index
+                    )
+                    if ti is None:
+                        return label  # error string
+                    ti.remove()
+                    return None  # success
 
             result = await asyncio.to_thread(_run)
 
@@ -522,48 +529,49 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                traffic = conn.ixnetwork.Traffic
-                ti, label = _find_traffic_item(
-                    traffic, name=params.traffic_item_name, index=params.traffic_item_index
-                )
-                if ti is None:
-                    return label
+                with conn.lock:
+                    traffic = conn.ixnetwork.Traffic
+                    ti, label = _find_traffic_item(
+                        traffic, name=params.traffic_item_name, index=params.traffic_item_index
+                    )
+                    if ti is None:
+                        return label
 
-                ce_list = ti.ConfigElement.find()
-                if len(ce_list) == 0:
-                    return f"Traffic item '{label}' has no config elements."
-                ce = ce_list[0]
+                    ce_list = ti.ConfigElement.find()
+                    if len(ce_list) == 0:
+                        return f"Traffic item '{label}' has no config elements."
+                    ce = ce_list[0]
 
-                changes = []
+                    changes = []
 
-                if params.frame_rate_type is not None:
-                    ce.FrameRate.Type = params.frame_rate_type
-                    changes.append(f"rate type: {params.frame_rate_type}")
+                    if params.frame_rate_type is not None:
+                        ce.FrameRate.Type = params.frame_rate_type
+                        changes.append(f"rate type: {params.frame_rate_type}")
 
-                if params.frame_rate is not None:
-                    ce.FrameRate.Rate = params.frame_rate
-                    changes.append(f"rate: {params.frame_rate}")
+                    if params.frame_rate is not None:
+                        ce.FrameRate.Rate = params.frame_rate
+                        changes.append(f"rate: {params.frame_rate}")
 
-                if params.frame_size is not None:
-                    ce.FrameSize.Type = "fixed"
-                    ce.FrameSize.FixedSize = params.frame_size
-                    changes.append(f"frame size: {params.frame_size} bytes")
+                    if params.frame_size is not None:
+                        ce.FrameSize.Type = "fixed"
+                        ce.FrameSize.FixedSize = params.frame_size
+                        changes.append(f"frame size: {params.frame_size} bytes")
 
-                if params.transmission_type is not None:
-                    ce.TransmissionControl.Type = params.transmission_type
-                    changes.append(f"transmission: {params.transmission_type}")
+                    if params.transmission_type is not None:
+                        ce.TransmissionControl.Type = params.transmission_type
+                        changes.append(f"transmission: {params.transmission_type}")
 
-                if params.frame_count is not None:
-                    ce.TransmissionControl.FrameCount = params.frame_count
-                    changes.append(f"frame count: {params.frame_count}")
+                    if params.frame_count is not None:
+                        ce.TransmissionControl.FrameCount = params.frame_count
+                        changes.append(f"frame count: {params.frame_count}")
 
-                if params.duration is not None:
-                    ce.TransmissionControl.Duration = params.duration
-                    changes.append(f"duration: {params.duration}s")
+                    if params.duration is not None:
+                        ce.TransmissionControl.Duration = params.duration
+                        changes.append(f"duration: {params.duration}s")
 
-                if not changes:
-                    return "nothing"
-                return label, changes
+                    if not changes:
+                        return "nothing"
+                    return label, changes
 
             result = await asyncio.to_thread(_run)
 
@@ -600,19 +608,20 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                traffic = conn.ixnetwork.Traffic
-                ti, label = _find_traffic_item(
-                    traffic, name=params.traffic_item_name, index=params.traffic_item_index
-                )
-                if ti is None:
-                    return label
+                with conn.lock:
+                    traffic = conn.ixnetwork.Traffic
+                    ti, label = _find_traffic_item(
+                        traffic, name=params.traffic_item_name, index=params.traffic_item_index
+                    )
+                    if ti is None:
+                        return label
 
-                tracking = ti.Tracking.find()
-                if len(tracking) == 0:
-                    return f"Traffic item '{label}' has no tracking object."
+                    tracking = ti.Tracking.find()
+                    if len(tracking) == 0:
+                        return f"Traffic item '{label}' has no tracking object."
 
-                tracking[0].TrackBy = params.tracking_fields
-                return label, params.tracking_fields
+                    tracking[0].TrackBy = params.tracking_fields
+                    return label, params.tracking_fields
 
             result = await asyncio.to_thread(_run)
 

@@ -129,8 +129,9 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _fetch():
                 conn = manager.get(params.connection_id)
-                topos = conn.ixnetwork.Topology.find()
-                return [_topo_summary(t) for t in topos]
+                with conn.lock:
+                    topos = conn.ixnetwork.Topology.find()
+                    return [_topo_summary(t) for t in topos]
 
             summaries = await asyncio.to_thread(_fetch)
 
@@ -178,21 +179,22 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _fetch():
                 conn = manager.get(params.connection_id)
-                if params.topology_name:
-                    topos = conn.ixnetwork.Topology.find(Name=params.topology_name)
-                    if len(topos) == 0:
-                        return None
-                else:
-                    topos = conn.ixnetwork.Topology.find()
+                with conn.lock:
+                    if params.topology_name:
+                        topos = conn.ixnetwork.Topology.find(Name=params.topology_name)
+                        if len(topos) == 0:
+                            return None
+                    else:
+                        topos = conn.ixnetwork.Topology.find()
 
-                details = []
-                for topo in topos:
-                    dgs = topo.DeviceGroup.find()
-                    details.append({
-                        **_topo_summary(topo),
-                        "device_groups": [_device_group_detail(dg) for dg in dgs],
-                    })
-                return details
+                    details = []
+                    for topo in topos:
+                        dgs = topo.DeviceGroup.find()
+                        details.append({
+                            **_topo_summary(topo),
+                            "device_groups": [_device_group_detail(dg) for dg in dgs],
+                        })
+                    return details
 
             all_details = await asyncio.to_thread(_fetch)
 
@@ -254,22 +256,23 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _fetch():
                 conn = manager.get(params.connection_id)
-                ix = conn.ixnetwork
-                topos = ix.Topology.find()
-                topo_data = []
-                for topo in topos:
-                    topo_info: dict[str, Any] = {
-                        "name": getattr(topo, "Name", ""),
-                        "status": getattr(topo, "Status", "unknown"),
-                        "device_groups": [],
-                    }
-                    for dg in topo.DeviceGroup.find():
-                        topo_info["device_groups"].append({
-                            "name": getattr(dg, "Name", ""),
-                            "status": getattr(dg, "Status", "unknown"),
-                        })
-                    topo_data.append(topo_info)
-                return topo_data
+                with conn.lock:
+                    ix = conn.ixnetwork
+                    topos = ix.Topology.find()
+                    topo_data = []
+                    for topo in topos:
+                        topo_info: dict[str, Any] = {
+                            "name": getattr(topo, "Name", ""),
+                            "status": getattr(topo, "Status", "unknown"),
+                            "device_groups": [],
+                        }
+                        for dg in topo.DeviceGroup.find():
+                            topo_info["device_groups"].append({
+                                "name": getattr(dg, "Name", ""),
+                                "status": getattr(dg, "Status", "unknown"),
+                            })
+                        topo_data.append(topo_info)
+                    return topo_data
 
             topo_data = await asyncio.to_thread(_fetch)
 
@@ -316,17 +319,18 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                if params.topology_name:
-                    topos = conn.ixnetwork.Topology.find(Name=params.topology_name)
-                    if len(topos) == 0:
-                        return None
-                    for topo in topos:
-                        for dg in topo.DeviceGroup.find():
-                            dg.Start()
-                    return params.topology_name
-                else:
-                    conn.ixnetwork.StartAllProtocols(Arg1="sync")
-                    return "__all__"
+                with conn.lock:
+                    if params.topology_name:
+                        topos = conn.ixnetwork.Topology.find(Name=params.topology_name)
+                        if len(topos) == 0:
+                            return None
+                        for topo in topos:
+                            for dg in topo.DeviceGroup.find():
+                                dg.Start()
+                        return params.topology_name
+                    else:
+                        conn.ixnetwork.StartAllProtocols(Arg1="sync")
+                        return "__all__"
 
             result = await asyncio.to_thread(_run)
 
@@ -364,17 +368,18 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                if params.topology_name:
-                    topos = conn.ixnetwork.Topology.find(Name=params.topology_name)
-                    if len(topos) == 0:
-                        return None
-                    for topo in topos:
-                        for dg in topo.DeviceGroup.find():
-                            dg.Stop()
-                    return params.topology_name
-                else:
-                    conn.ixnetwork.StopAllProtocols(Arg1="sync")
-                    return "__all__"
+                with conn.lock:
+                    if params.topology_name:
+                        topos = conn.ixnetwork.Topology.find(Name=params.topology_name)
+                        if len(topos) == 0:
+                            return None
+                        for topo in topos:
+                            for dg in topo.DeviceGroup.find():
+                                dg.Stop()
+                        return params.topology_name
+                    else:
+                        conn.ixnetwork.StopAllProtocols(Arg1="sync")
+                        return "__all__"
 
             result = await asyncio.to_thread(_run)
 
@@ -415,21 +420,22 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                ix = conn.ixnetwork
+                with conn.lock:
+                    ix = conn.ixnetwork
 
-                # Resolve port names to vport hrefs
-                vport_hrefs = []
-                for pname in params.port_names:
-                    vports = ix.Vport.find(Name=pname)
-                    if len(vports) == 0:
-                        return f"No virtual port named '{pname}' found. Use ixia_add_ports or ixia_list_ports."
-                    vport_hrefs.append(vports[0].href)
+                    # Resolve port names to vport hrefs
+                    vport_hrefs = []
+                    for pname in params.port_names:
+                        vports = ix.Vport.find(Name=pname)
+                        if len(vports) == 0:
+                            return f"No virtual port named '{pname}' found. Use ixia_add_ports or ixia_list_ports."
+                        vport_hrefs.append(vports[0].href)
 
-                topo = ix.Topology.add(Name=params.name, Ports=vport_hrefs)
-                return {
-                    "name": getattr(topo, "Name", params.name),
-                    "ports": params.port_names,
-                }
+                    topo = ix.Topology.add(Name=params.name, Ports=vport_hrefs)
+                    return {
+                        "name": getattr(topo, "Name", params.name),
+                        "ports": params.port_names,
+                    }
 
             result = await asyncio.to_thread(_run)
 
@@ -463,11 +469,12 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                topo, err = _find_topo(conn.ixnetwork, params.topology_name)
-                if err:
-                    return err
-                topo.remove()
-                return None
+                with conn.lock:
+                    topo, err = _find_topo(conn.ixnetwork, params.topology_name)
+                    if err:
+                        return err
+                    topo.remove()
+                    return None
 
             result = await asyncio.to_thread(_run)
 
@@ -497,29 +504,30 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                ix = conn.ixnetwork
-                topo, err = _find_topo(ix, params.topology_name)
-                if err:
-                    return err
+                with conn.lock:
+                    ix = conn.ixnetwork
+                    topo, err = _find_topo(ix, params.topology_name)
+                    if err:
+                        return err
 
-                changes = []
-                if params.new_name is not None:
-                    topo.Name = params.new_name
-                    changes.append(f"name -> '{params.new_name}'")
+                    changes = []
+                    if params.new_name is not None:
+                        topo.Name = params.new_name
+                        changes.append(f"name -> '{params.new_name}'")
 
-                if params.port_names is not None:
-                    vport_hrefs = []
-                    for pname in params.port_names:
-                        vports = ix.Vport.find(Name=pname)
-                        if len(vports) == 0:
-                            return f"No virtual port named '{pname}' found."
-                        vport_hrefs.append(vports[0].href)
-                    topo.Ports = vport_hrefs
-                    changes.append(f"ports -> {params.port_names}")
+                    if params.port_names is not None:
+                        vport_hrefs = []
+                        for pname in params.port_names:
+                            vports = ix.Vport.find(Name=pname)
+                            if len(vports) == 0:
+                                return f"No virtual port named '{pname}' found."
+                            vport_hrefs.append(vports[0].href)
+                        topo.Ports = vport_hrefs
+                        changes.append(f"ports -> {params.port_names}")
 
-                if not changes:
-                    return "nothing"
-                return changes
+                    if not changes:
+                        return "nothing"
+                    return changes
 
             result = await asyncio.to_thread(_run)
 
@@ -559,14 +567,15 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                topo, err = _find_topo(conn.ixnetwork, params.topology_name)
-                if err:
-                    return err
-                dg = topo.DeviceGroup.add(Name=params.name, Multiplier=params.multiplier)
-                return {
-                    "name": getattr(dg, "Name", params.name),
-                    "multiplier": getattr(dg, "Multiplier", params.multiplier),
-                }
+                with conn.lock:
+                    topo, err = _find_topo(conn.ixnetwork, params.topology_name)
+                    if err:
+                        return err
+                    dg = topo.DeviceGroup.add(Name=params.name, Multiplier=params.multiplier)
+                    return {
+                        "name": getattr(dg, "Name", params.name),
+                        "multiplier": getattr(dg, "Multiplier", params.multiplier),
+                    }
 
             result = await asyncio.to_thread(_run)
 
@@ -600,13 +609,14 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                dg, err = _find_device_group(
-                    conn.ixnetwork, params.topology_name, params.device_group_name
-                )
-                if err:
-                    return err
-                dg.remove()
-                return None
+                with conn.lock:
+                    dg, err = _find_device_group(
+                        conn.ixnetwork, params.topology_name, params.device_group_name
+                    )
+                    if err:
+                        return err
+                    dg.remove()
+                    return None
 
             result = await asyncio.to_thread(_run)
 
@@ -639,26 +649,27 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                dg, err = _find_device_group(
-                    conn.ixnetwork, params.topology_name, params.device_group_name
-                )
-                if err:
-                    return err
+                with conn.lock:
+                    dg, err = _find_device_group(
+                        conn.ixnetwork, params.topology_name, params.device_group_name
+                    )
+                    if err:
+                        return err
 
-                changes = []
-                if params.new_name is not None:
-                    dg.Name = params.new_name
-                    changes.append(f"name -> '{params.new_name}'")
-                if params.multiplier is not None:
-                    dg.Multiplier = params.multiplier
-                    changes.append(f"multiplier -> {params.multiplier}")
-                if params.enabled is not None:
-                    dg.Enabled = params.enabled
-                    changes.append(f"enabled -> {params.enabled}")
+                    changes = []
+                    if params.new_name is not None:
+                        dg.Name = params.new_name
+                        changes.append(f"name -> '{params.new_name}'")
+                    if params.multiplier is not None:
+                        dg.Multiplier = params.multiplier
+                        changes.append(f"multiplier -> {params.multiplier}")
+                    if params.enabled is not None:
+                        dg.Enabled = params.enabled
+                        changes.append(f"enabled -> {params.enabled}")
 
-                if not changes:
-                    return "nothing"
-                return changes
+                    if not changes:
+                        return "nothing"
+                    return changes
 
             result = await asyncio.to_thread(_run)
 
@@ -697,33 +708,34 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                dg, err = _find_device_group(
-                    conn.ixnetwork, params.topology_name, params.device_group_name
-                )
-                if err:
-                    return err
-
-                ng = dg.NetworkGroup.add(Name=params.name, Multiplier=params.multiplier)
-
-                pool_info = None
-                if params.ipv4_network_address:
-                    pool = ng.Ipv4PrefixPools.add(NumberOfAddresses=1)
-                    pool.NetworkAddress.Increment(
-                        start_value=params.ipv4_network_address,
-                        step_value=params.ipv4_prefix_step or "0.1.0.0",
+                with conn.lock:
+                    dg, err = _find_device_group(
+                        conn.ixnetwork, params.topology_name, params.device_group_name
                     )
-                    if params.ipv4_prefix_length:
-                        pool.PrefixLength.Single(params.ipv4_prefix_length)
-                    pool_info = {
-                        "network_address": params.ipv4_network_address,
-                        "prefix_length": params.ipv4_prefix_length or 24,
-                    }
+                    if err:
+                        return err
 
-                return {
-                    "name": getattr(ng, "Name", params.name),
-                    "multiplier": params.multiplier,
-                    "ipv4_pool": pool_info,
-                }
+                    ng = dg.NetworkGroup.add(Name=params.name, Multiplier=params.multiplier)
+
+                    pool_info = None
+                    if params.ipv4_network_address:
+                        pool = ng.Ipv4PrefixPools.add(NumberOfAddresses=1)
+                        pool.NetworkAddress.Increment(
+                            start_value=params.ipv4_network_address,
+                            step_value=params.ipv4_prefix_step or "0.1.0.0",
+                        )
+                        if params.ipv4_prefix_length:
+                            pool.PrefixLength.Single(params.ipv4_prefix_length)
+                        pool_info = {
+                            "network_address": params.ipv4_network_address,
+                            "prefix_length": params.ipv4_prefix_length or 24,
+                        }
+
+                    return {
+                        "name": getattr(ng, "Name", params.name),
+                        "multiplier": params.multiplier,
+                        "ipv4_pool": pool_info,
+                    }
 
             result = await asyncio.to_thread(_run)
 

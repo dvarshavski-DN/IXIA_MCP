@@ -105,32 +105,33 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                dg, err = _find_device_group(
-                    conn.ixnetwork, params.topology_name, params.device_group_name
-                )
-                if err:
-                    return err
+                with conn.lock:
+                    dg, err = _find_device_group(
+                        conn.ixnetwork, params.topology_name, params.device_group_name
+                    )
+                    if err:
+                        return err
 
-                protocol = params.protocol.lower().strip()
-                if protocol not in _PROTOCOL_MAP:
-                    supported = ", ".join(sorted(_PROTOCOL_MAP.keys()))
-                    return f"Unknown protocol '{params.protocol}'. Supported: {supported}"
+                    protocol = params.protocol.lower().strip()
+                    if protocol not in _PROTOCOL_MAP:
+                        supported = ", ".join(sorted(_PROTOCOL_MAP.keys()))
+                        return f"Unknown protocol '{params.protocol}'. Supported: {supported}"
 
-                parent_attr, child_attr = _PROTOCOL_MAP[protocol]
+                    parent_attr, child_attr = _PROTOCOL_MAP[protocol]
 
-                if parent_attr == "__dg__":
-                    parent = dg
-                else:
-                    parent = _resolve_parent(dg, parent_attr)
-                    if parent is None:
-                        return (
-                            f"Cannot add '{protocol}': parent protocol '{parent_attr}' "
-                            f"not found on device group '{params.device_group_name}'. "
-                            f"Add '{parent_attr.lower()}' first."
-                        )
+                    if parent_attr == "__dg__":
+                        parent = dg
+                    else:
+                        parent = _resolve_parent(dg, parent_attr)
+                        if parent is None:
+                            return (
+                                f"Cannot add '{protocol}': parent protocol '{parent_attr}' "
+                                f"not found on device group '{params.device_group_name}'. "
+                                f"Add '{parent_attr.lower()}' first."
+                            )
 
-                getattr(parent, child_attr).add()
-                return None
+                    getattr(parent, child_attr).add()
+                    return None
 
             result = await asyncio.to_thread(_run)
 
@@ -167,56 +168,57 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                dg, err = _find_device_group(
-                    conn.ixnetwork, params.topology_name, params.device_group_name
-                )
-                if err:
-                    return err
+                with conn.lock:
+                    dg, err = _find_device_group(
+                        conn.ixnetwork, params.topology_name, params.device_group_name
+                    )
+                    if err:
+                        return err
 
-                protocol = params.protocol.lower().strip()
-                if protocol not in _PROTOCOL_DG_ATTR:
-                    supported = ", ".join(sorted(_PROTOCOL_DG_ATTR.keys()))
-                    return f"Unknown protocol '{params.protocol}'. Supported: {supported}"
+                    protocol = params.protocol.lower().strip()
+                    if protocol not in _PROTOCOL_DG_ATTR:
+                        supported = ", ".join(sorted(_PROTOCOL_DG_ATTR.keys()))
+                        return f"Unknown protocol '{params.protocol}'. Supported: {supported}"
 
-                # Walk to the protocol: for L2 it's on the DG,
-                # for L3+ we need to traverse through Ethernet
-                attr_name = _PROTOCOL_DG_ATTR[protocol]
+                    # Walk to the protocol: for L2 it's on the DG,
+                    # for L3+ we need to traverse through Ethernet
+                    attr_name = _PROTOCOL_DG_ATTR[protocol]
 
-                # Try direct on DG first (Ethernet)
-                if protocol == "ethernet":
-                    found = dg.Ethernet.find()
-                else:
-                    # Walk through Ethernet
-                    eth = dg.Ethernet.find()
-                    if len(eth) == 0:
-                        return f"No Ethernet stack found — protocol '{protocol}' cannot exist."
-                    # For IPv4/IPv6 it's on Ethernet; for BGP etc. it's on IPv4/IPv6
-                    found = None
-                    # Try on Ethernet first
-                    stack = getattr(eth[0], attr_name, None)
-                    if stack is not None:
-                        found = stack.find()
-                    # If not found on Ethernet, try on IPv4/IPv6
+                    # Try direct on DG first (Ethernet)
+                    if protocol == "ethernet":
+                        found = dg.Ethernet.find()
+                    else:
+                        # Walk through Ethernet
+                        eth = dg.Ethernet.find()
+                        if len(eth) == 0:
+                            return f"No Ethernet stack found — protocol '{protocol}' cannot exist."
+                        # For IPv4/IPv6 it's on Ethernet; for BGP etc. it's on IPv4/IPv6
+                        found = None
+                        # Try on Ethernet first
+                        stack = getattr(eth[0], attr_name, None)
+                        if stack is not None:
+                            found = stack.find()
+                        # If not found on Ethernet, try on IPv4/IPv6
+                        if found is None or len(found) == 0:
+                            for ip_layer in ("Ipv4", "Ipv6"):
+                                ip_stack = getattr(eth[0], ip_layer, None)
+                                if ip_stack is None:
+                                    continue
+                                ip_found = ip_stack.find()
+                                if len(ip_found) == 0:
+                                    continue
+                                stack = getattr(ip_found[0], attr_name, None)
+                                if stack is not None:
+                                    found = stack.find()
+                                    if found is not None and len(found) > 0:
+                                        break
+
                     if found is None or len(found) == 0:
-                        for ip_layer in ("Ipv4", "Ipv6"):
-                            ip_stack = getattr(eth[0], ip_layer, None)
-                            if ip_stack is None:
-                                continue
-                            ip_found = ip_stack.find()
-                            if len(ip_found) == 0:
-                                continue
-                            stack = getattr(ip_found[0], attr_name, None)
-                            if stack is not None:
-                                found = stack.find()
-                                if found is not None and len(found) > 0:
-                                    break
+                        return f"Protocol '{protocol}' not found on device group '{params.device_group_name}'."
 
-                if found is None or len(found) == 0:
-                    return f"Protocol '{protocol}' not found on device group '{params.device_group_name}'."
-
-                for item in found:
-                    item.remove()
-                return None
+                    for item in found:
+                        item.remove()
+                    return None
 
             result = await asyncio.to_thread(_run)
 
@@ -257,52 +259,53 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                dg, err = _find_device_group(
-                    conn.ixnetwork, params.topology_name, params.device_group_name
-                )
-                if err:
-                    return err
+                with conn.lock:
+                    dg, err = _find_device_group(
+                        conn.ixnetwork, params.topology_name, params.device_group_name
+                    )
+                    if err:
+                        return err
 
-                eth = dg.Ethernet.find()
-                if len(eth) == 0:
-                    return "No Ethernet stack found. Use ixia_add_protocol to add 'ethernet' first."
-                eth = eth[0]
+                    eth = dg.Ethernet.find()
+                    if len(eth) == 0:
+                        return "No Ethernet stack found. Use ixia_add_protocol to add 'ethernet' first."
+                    eth = eth[0]
 
-                changes = []
+                    changes = []
 
-                if params.mac_address is not None:
-                    step = params.mac_step or "00:00:00:00:00:01"
-                    eth.Mac.Increment(start_value=params.mac_address, step_value=step)
-                    changes.append(f"MAC: {params.mac_address} (step: {step})")
+                    if params.mac_address is not None:
+                        step = params.mac_step or "00:00:00:00:00:01"
+                        eth.Mac.Increment(start_value=params.mac_address, step_value=step)
+                        changes.append(f"MAC: {params.mac_address} (step: {step})")
 
-                if params.mtu is not None:
-                    eth.Mtu.Single(params.mtu)
-                    changes.append(f"MTU: {params.mtu}")
+                    if params.mtu is not None:
+                        eth.Mtu.Single(params.mtu)
+                        changes.append(f"MTU: {params.mtu}")
 
-                if params.vlan_enabled is not None:
-                    eth.EnableVlans.Single(params.vlan_enabled)
-                    changes.append(f"VLAN enabled: {params.vlan_enabled}")
+                    if params.vlan_enabled is not None:
+                        eth.EnableVlans.Single(params.vlan_enabled)
+                        changes.append(f"VLAN enabled: {params.vlan_enabled}")
 
-                if params.vlan_id is not None:
-                    eth.EnableVlans.Single(True)
-                    vlan = eth.Vlan.find()
-                    if len(vlan) > 0:
-                        step = params.vlan_id_step if params.vlan_id_step is not None else 0
-                        vlan[0].VlanId.Increment(start_value=params.vlan_id, step_value=step)
-                        changes.append(f"VLAN ID: {params.vlan_id} (step: {step})")
+                    if params.vlan_id is not None:
+                        eth.EnableVlans.Single(True)
+                        vlan = eth.Vlan.find()
+                        if len(vlan) > 0:
+                            step = params.vlan_id_step if params.vlan_id_step is not None else 0
+                            vlan[0].VlanId.Increment(start_value=params.vlan_id, step_value=step)
+                            changes.append(f"VLAN ID: {params.vlan_id} (step: {step})")
 
-                if params.vlan_priority is not None:
-                    eth.EnableVlans.Single(True)
-                    vlan = eth.Vlan.find()
-                    if len(vlan) > 0:
-                        vlan[0].Priority.Single(params.vlan_priority)
-                        changes.append(f"VLAN priority: {params.vlan_priority}")
-                    else:
-                        changes.append("Warning: VLAN priority requested but no VLAN object found")
+                    if params.vlan_priority is not None:
+                        eth.EnableVlans.Single(True)
+                        vlan = eth.Vlan.find()
+                        if len(vlan) > 0:
+                            vlan[0].Priority.Single(params.vlan_priority)
+                            changes.append(f"VLAN priority: {params.vlan_priority}")
+                        else:
+                            changes.append("Warning: VLAN priority requested but no VLAN object found")
 
-                if not changes:
-                    return "nothing"
-                return changes
+                    if not changes:
+                        return "nothing"
+                    return changes
 
             result = await asyncio.to_thread(_run)
 
@@ -338,39 +341,40 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                dg, err = _find_device_group(
-                    conn.ixnetwork, params.topology_name, params.device_group_name
-                )
-                if err:
-                    return err
+                with conn.lock:
+                    dg, err = _find_device_group(
+                        conn.ixnetwork, params.topology_name, params.device_group_name
+                    )
+                    if err:
+                        return err
 
-                eth = dg.Ethernet.find()
-                if len(eth) == 0:
-                    return "No Ethernet stack found. Add 'ethernet' first."
-                ipv4 = eth[0].Ipv4.find()
-                if len(ipv4) == 0:
-                    return "No IPv4 stack found. Use ixia_add_protocol to add 'ipv4' first."
-                ipv4 = ipv4[0]
+                    eth = dg.Ethernet.find()
+                    if len(eth) == 0:
+                        return "No Ethernet stack found. Add 'ethernet' first."
+                    ipv4 = eth[0].Ipv4.find()
+                    if len(ipv4) == 0:
+                        return "No IPv4 stack found. Use ixia_add_protocol to add 'ipv4' first."
+                    ipv4 = ipv4[0]
 
-                changes = []
+                    changes = []
 
-                if params.address is not None:
-                    step = params.address_step or "0.0.0.1"
-                    ipv4.Address.Increment(start_value=params.address, step_value=step)
-                    changes.append(f"address: {params.address} (step: {step})")
+                    if params.address is not None:
+                        step = params.address_step or "0.0.0.1"
+                        ipv4.Address.Increment(start_value=params.address, step_value=step)
+                        changes.append(f"address: {params.address} (step: {step})")
 
-                if params.gateway is not None:
-                    step = params.gateway_step or "0.0.0.0"
-                    ipv4.GatewayIp.Increment(start_value=params.gateway, step_value=step)
-                    changes.append(f"gateway: {params.gateway} (step: {step})")
+                    if params.gateway is not None:
+                        step = params.gateway_step or "0.0.0.0"
+                        ipv4.GatewayIp.Increment(start_value=params.gateway, step_value=step)
+                        changes.append(f"gateway: {params.gateway} (step: {step})")
 
-                if params.prefix_length is not None:
-                    ipv4.Prefix.Single(params.prefix_length)
-                    changes.append(f"prefix: /{params.prefix_length}")
+                    if params.prefix_length is not None:
+                        ipv4.Prefix.Single(params.prefix_length)
+                        changes.append(f"prefix: /{params.prefix_length}")
 
-                if not changes:
-                    return "nothing"
-                return changes
+                    if not changes:
+                        return "nothing"
+                    return changes
 
             result = await asyncio.to_thread(_run)
 
@@ -406,39 +410,40 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                dg, err = _find_device_group(
-                    conn.ixnetwork, params.topology_name, params.device_group_name
-                )
-                if err:
-                    return err
+                with conn.lock:
+                    dg, err = _find_device_group(
+                        conn.ixnetwork, params.topology_name, params.device_group_name
+                    )
+                    if err:
+                        return err
 
-                eth = dg.Ethernet.find()
-                if len(eth) == 0:
-                    return "No Ethernet stack found. Add 'ethernet' first."
-                ipv6 = eth[0].Ipv6.find()
-                if len(ipv6) == 0:
-                    return "No IPv6 stack found. Use ixia_add_protocol to add 'ipv6' first."
-                ipv6 = ipv6[0]
+                    eth = dg.Ethernet.find()
+                    if len(eth) == 0:
+                        return "No Ethernet stack found. Add 'ethernet' first."
+                    ipv6 = eth[0].Ipv6.find()
+                    if len(ipv6) == 0:
+                        return "No IPv6 stack found. Use ixia_add_protocol to add 'ipv6' first."
+                    ipv6 = ipv6[0]
 
-                changes = []
+                    changes = []
 
-                if params.address is not None:
-                    step = params.address_step or "::1"
-                    ipv6.Address.Increment(start_value=params.address, step_value=step)
-                    changes.append(f"address: {params.address} (step: {step})")
+                    if params.address is not None:
+                        step = params.address_step or "::1"
+                        ipv6.Address.Increment(start_value=params.address, step_value=step)
+                        changes.append(f"address: {params.address} (step: {step})")
 
-                if params.gateway is not None:
-                    step = params.gateway_step or "::0"
-                    ipv6.GatewayIp.Increment(start_value=params.gateway, step_value=step)
-                    changes.append(f"gateway: {params.gateway} (step: {step})")
+                    if params.gateway is not None:
+                        step = params.gateway_step or "::0"
+                        ipv6.GatewayIp.Increment(start_value=params.gateway, step_value=step)
+                        changes.append(f"gateway: {params.gateway} (step: {step})")
 
-                if params.prefix_length is not None:
-                    ipv6.Prefix.Single(params.prefix_length)
-                    changes.append(f"prefix: /{params.prefix_length}")
+                    if params.prefix_length is not None:
+                        ipv6.Prefix.Single(params.prefix_length)
+                        changes.append(f"prefix: /{params.prefix_length}")
 
-                if not changes:
-                    return "nothing"
-                return changes
+                    if not changes:
+                        return "nothing"
+                    return changes
 
             result = await asyncio.to_thread(_run)
 
@@ -476,62 +481,63 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                dg, err = _find_device_group(
-                    conn.ixnetwork, params.topology_name, params.device_group_name
-                )
-                if err:
-                    return err
+                with conn.lock:
+                    dg, err = _find_device_group(
+                        conn.ixnetwork, params.topology_name, params.device_group_name
+                    )
+                    if err:
+                        return err
 
-                eth = dg.Ethernet.find()
-                if len(eth) == 0:
-                    return "No Ethernet stack found."
+                    eth = dg.Ethernet.find()
+                    if len(eth) == 0:
+                        return "No Ethernet stack found."
 
-                ip_ver = params.ip_version.lower().strip()
-                if ip_ver == "ipv4":
-                    ip_stack = eth[0].Ipv4.find()
-                    if len(ip_stack) == 0:
-                        return "No IPv4 stack found. Add 'ipv4' first."
-                    bgp = ip_stack[0].BgpIpv4Peer.find()
-                    bgp_label = "BgpIpv4Peer"
-                elif ip_ver == "ipv6":
-                    ip_stack = eth[0].Ipv6.find()
-                    if len(ip_stack) == 0:
-                        return "No IPv6 stack found. Add 'ipv6' first."
-                    bgp = ip_stack[0].BgpIpv6Peer.find()
-                    bgp_label = "BgpIpv6Peer"
-                else:
-                    return f"Invalid ip_version '{params.ip_version}'. Use 'ipv4' or 'ipv6'."
+                    ip_ver = params.ip_version.lower().strip()
+                    if ip_ver == "ipv4":
+                        ip_stack = eth[0].Ipv4.find()
+                        if len(ip_stack) == 0:
+                            return "No IPv4 stack found. Add 'ipv4' first."
+                        bgp = ip_stack[0].BgpIpv4Peer.find()
+                        bgp_label = "BgpIpv4Peer"
+                    elif ip_ver == "ipv6":
+                        ip_stack = eth[0].Ipv6.find()
+                        if len(ip_stack) == 0:
+                            return "No IPv6 stack found. Add 'ipv6' first."
+                        bgp = ip_stack[0].BgpIpv6Peer.find()
+                        bgp_label = "BgpIpv6Peer"
+                    else:
+                        return f"Invalid ip_version '{params.ip_version}'. Use 'ipv4' or 'ipv6'."
 
-                if len(bgp) == 0:
-                    return f"No {bgp_label} found. Use ixia_add_protocol to add 'bgpv4' or 'bgpv6' first."
-                bgp = bgp[0]
+                    if len(bgp) == 0:
+                        return f"No {bgp_label} found. Use ixia_add_protocol to add 'bgpv4' or 'bgpv6' first."
+                    bgp = bgp[0]
 
-                changes = []
+                    changes = []
 
-                if params.dut_ip is not None:
-                    step = params.dut_ip_step or ("0.0.0.0" if ip_ver == "ipv4" else "::0")
-                    bgp.DutIp.Increment(start_value=params.dut_ip, step_value=step)
-                    changes.append(f"DUT IP: {params.dut_ip} (step: {step})")
+                    if params.dut_ip is not None:
+                        step = params.dut_ip_step or ("0.0.0.0" if ip_ver == "ipv4" else "::0")
+                        bgp.DutIp.Increment(start_value=params.dut_ip, step_value=step)
+                        changes.append(f"DUT IP: {params.dut_ip} (step: {step})")
 
-                if params.local_as is not None:
-                    bgp.LocalAs2Bytes.Single(params.local_as)
-                    changes.append(f"local AS: {params.local_as}")
+                    if params.local_as is not None:
+                        bgp.LocalAs2Bytes.Single(params.local_as)
+                        changes.append(f"local AS: {params.local_as}")
 
-                if params.bgp_type is not None:
-                    bgp.Type.Single(params.bgp_type)
-                    changes.append(f"type: {params.bgp_type}")
+                    if params.bgp_type is not None:
+                        bgp.Type.Single(params.bgp_type)
+                        changes.append(f"type: {params.bgp_type}")
 
-                if params.hold_timer is not None:
-                    bgp.HoldTimer.Single(params.hold_timer)
-                    changes.append(f"hold timer: {params.hold_timer}s")
+                    if params.hold_timer is not None:
+                        bgp.HoldTimer.Single(params.hold_timer)
+                        changes.append(f"hold timer: {params.hold_timer}s")
 
-                if params.update_interval is not None:
-                    bgp.UpdateInterval.Single(params.update_interval)
-                    changes.append(f"update interval: {params.update_interval}s")
+                    if params.update_interval is not None:
+                        bgp.UpdateInterval.Single(params.update_interval)
+                        changes.append(f"update interval: {params.update_interval}s")
 
-                if not changes:
-                    return "nothing"
-                return changes
+                    if not changes:
+                        return "nothing"
+                    return changes
 
             result = await asyncio.to_thread(_run)
 

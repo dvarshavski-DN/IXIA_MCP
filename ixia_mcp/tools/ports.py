@@ -61,8 +61,9 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _fetch():
                 conn = manager.get(params.connection_id)
-                vports = conn.ixnetwork.Vport.find()
-                return [_vport_to_dict(v) for v in vports]
+                with conn.lock:
+                    vports = conn.ixnetwork.Vport.find()
+                    return [_vport_to_dict(v) for v in vports]
 
             ports = await asyncio.to_thread(_fetch)
 
@@ -112,13 +113,14 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _fetch():
                 conn = manager.get(params.connection_id)
-                if params.port_name:
-                    vports = conn.ixnetwork.Vport.find(Name=params.port_name)
-                    if len(vports) == 0:
-                        return None
-                else:
-                    vports = conn.ixnetwork.Vport.find()
-                return [_vport_to_dict(v) for v in vports]
+                with conn.lock:
+                    if params.port_name:
+                        vports = conn.ixnetwork.Vport.find(Name=params.port_name)
+                        if len(vports) == 0:
+                            return None
+                    else:
+                        vports = conn.ixnetwork.Vport.find()
+                    return [_vport_to_dict(v) for v in vports]
 
             ports = await asyncio.to_thread(_fetch)
 
@@ -175,38 +177,39 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                ix = conn.ixnetwork
-                count = len(params.card_port_pairs)
-                names = params.port_names or [f"Port {i + 1}" for i in range(count)]
-                if len(names) != count:
-                    return f"port_names length ({len(names)}) must match card_port_pairs length ({count})."
+                with conn.lock:
+                    ix = conn.ixnetwork
+                    count = len(params.card_port_pairs)
+                    names = params.port_names or [f"Port {i + 1}" for i in range(count)]
+                    if len(names) != count:
+                        return f"port_names length ({len(names)}) must match card_port_pairs length ({count})."
 
-                # Create virtual ports
-                vports = []
-                for name in names:
-                    vports.append(ix.Vport.add(Name=name))
+                    # Create virtual ports
+                    vports = []
+                    for name in names:
+                        vports.append(ix.Vport.add(Name=name))
 
-                # Build chassis port map and vport href list
-                port_map = []
-                vport_hrefs = []
-                for i, (card, port) in enumerate(params.card_port_pairs):
-                    port_map.append({
-                        "Arg1": params.chassis_ip,
-                        "Arg2": int(card),
-                        "Arg3": int(port),
-                    })
-                    vport_hrefs.append(vports[i].href)
+                    # Build chassis port map and vport href list
+                    port_map = []
+                    vport_hrefs = []
+                    for i, (card, port) in enumerate(params.card_port_pairs):
+                        port_map.append({
+                            "Arg1": params.chassis_ip,
+                            "Arg2": int(card),
+                            "Arg3": int(port),
+                        })
+                        vport_hrefs.append(vports[i].href)
 
-                # Assign physical ports to virtual ports
-                ix.AssignPorts(port_map, [], vport_hrefs, params.force_ownership)
+                    # Assign physical ports to virtual ports
+                    ix.AssignPorts(port_map, [], vport_hrefs, params.force_ownership)
 
-                return [
-                    {
-                        "name": names[i],
-                        "location": f"{params.chassis_ip}/{card}/{port}",
-                    }
-                    for i, (card, port) in enumerate(params.card_port_pairs)
-                ]
+                    return [
+                        {
+                            "name": names[i],
+                            "location": f"{params.chassis_ip}/{card}/{port}",
+                        }
+                        for i, (card, port) in enumerate(params.card_port_pairs)
+                    ]
 
             result = await asyncio.to_thread(_run)
 
@@ -243,23 +246,24 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                ix = conn.ixnetwork
-                if params.port_names:
-                    released = []
-                    for name in params.port_names:
-                        vports = ix.Vport.find(Name=name)
-                        if len(vports) == 0:
-                            return f"No port named '{name}' found."
+                with conn.lock:
+                    ix = conn.ixnetwork
+                    if params.port_names:
+                        released = []
+                        for name in params.port_names:
+                            vports = ix.Vport.find(Name=name)
+                            if len(vports) == 0:
+                                return f"No port named '{name}' found."
+                            for v in vports:
+                                v.ReleasePort()
+                                released.append(name)
+                        return released
+                    else:
+                        vports = ix.Vport.find()
+                        names = [getattr(v, "Name", "") for v in vports]
                         for v in vports:
                             v.ReleasePort()
-                            released.append(name)
-                    return released
-                else:
-                    vports = ix.Vport.find()
-                    names = [getattr(v, "Name", "") for v in vports]
-                    for v in vports:
-                        v.ReleasePort()
-                    return names
+                        return names
 
             result = await asyncio.to_thread(_run)
 
@@ -295,23 +299,24 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                ix = conn.ixnetwork
-                if params.port_names:
-                    removed = []
-                    for name in params.port_names:
-                        vports = ix.Vport.find(Name=name)
-                        if len(vports) == 0:
-                            return f"No port named '{name}' found."
+                with conn.lock:
+                    ix = conn.ixnetwork
+                    if params.port_names:
+                        removed = []
+                        for name in params.port_names:
+                            vports = ix.Vport.find(Name=name)
+                            if len(vports) == 0:
+                                return f"No port named '{name}' found."
+                            for v in vports:
+                                v.remove()
+                                removed.append(name)
+                        return removed
+                    else:
+                        vports = ix.Vport.find()
+                        names = [getattr(v, "Name", "") for v in vports]
                         for v in vports:
                             v.remove()
-                            removed.append(name)
-                    return removed
-                else:
-                    vports = ix.Vport.find()
-                    names = [getattr(v, "Name", "") for v in vports]
-                    for v in vports:
-                        v.remove()
-                    return names
+                        return names
 
             result = await asyncio.to_thread(_run)
 

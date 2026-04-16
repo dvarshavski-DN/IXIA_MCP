@@ -79,7 +79,8 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _fetch():
                 conn = manager.get(params.connection_id)
-                return _stat_view_to_records(conn.session_assistant, "Port Statistics")
+                with conn.lock:
+                    return _stat_view_to_records(conn.session_assistant, "Port Statistics")
 
             records = await asyncio.to_thread(_fetch)
 
@@ -113,7 +114,8 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _fetch():
                 conn = manager.get(params.connection_id)
-                return _stat_view_to_records(conn.session_assistant, "Traffic Item Statistics")
+                with conn.lock:
+                    return _stat_view_to_records(conn.session_assistant, "Traffic Item Statistics")
 
             records = await asyncio.to_thread(_fetch)
 
@@ -148,19 +150,20 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                ix = conn.ixnetwork
-                scope = params.scope.lower().strip()
-                if scope == "all":
-                    ix.ClearStats(["waitForPortStatsRefresh", "waitForTrafficStatsRefresh"])
-                    return "all"
-                elif scope == "traffic":
-                    ix.ClearPortsAndTrafficStats(["waitForPortStatsRefresh", "waitForTrafficStatsRefresh"])
-                    return "port and traffic"
-                elif scope == "protocol":
-                    ix.ClearProtocolStats()
-                    return "protocol"
-                else:
-                    return None
+                with conn.lock:
+                    ix = conn.ixnetwork
+                    scope = params.scope.lower().strip()
+                    if scope == "all":
+                        ix.ClearStats(["waitForPortStatsRefresh", "waitForTrafficStatsRefresh"])
+                        return "all"
+                    elif scope == "traffic":
+                        ix.ClearPortsAndTrafficStats(["waitForPortStatsRefresh", "waitForTrafficStatsRefresh"])
+                        return "port and traffic"
+                    elif scope == "protocol":
+                        ix.ClearProtocolStats()
+                        return "protocol"
+                    else:
+                        return None
 
             result = await asyncio.to_thread(_run)
 
@@ -200,7 +203,8 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _fetch():
                 conn = manager.get(params.connection_id)
-                return _stat_view_to_records(conn.session_assistant, "Flow Statistics")
+                with conn.lock:
+                    return _stat_view_to_records(conn.session_assistant, "Flow Statistics")
 
             records = await asyncio.to_thread(_fetch)
 

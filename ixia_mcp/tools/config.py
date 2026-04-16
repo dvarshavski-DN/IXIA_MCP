@@ -37,9 +37,10 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                from ixnetwork_restpy.files import Files
-                conn.ixnetwork.SaveAs(Files(params.file_path, local_file=False))
-                return None
+                with conn.lock:
+                    from ixnetwork_restpy.files import Files
+                    conn.ixnetwork.SaveAs(Files(params.file_path, local_file=False))
+                    return None
 
             result = await asyncio.to_thread(_run)
 
@@ -73,9 +74,10 @@ def register(mcp: "FastMCP", manager: "ConnectionManager") -> None:
         try:
             def _run():
                 conn = manager.get(params.connection_id)
-                from ixnetwork_restpy.files import Files
-                conn.ixnetwork.LoadConfig(Files(params.file_path, local_file=False))
-                return None
+                with conn.lock:
+                    from ixnetwork_restpy.files import Files
+                    conn.ixnetwork.LoadConfig(Files(params.file_path, local_file=False))
+                    return None
 
             result = await asyncio.to_thread(_run)
 

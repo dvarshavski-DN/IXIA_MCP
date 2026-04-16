@@ -140,7 +140,7 @@ def _build_server(args: argparse.Namespace) -> tuple[FastMCP, ConnectionManager]
 def main() -> None:
     """Run the MCP server."""
     args = _parse_args()
-    mcp, _ = _build_server(args)
+    mcp, manager = _build_server(args)
 
     if args.transport == "streamable-http":
         logger.info("Starting IXIA MCP server on http://0.0.0.0:%d/mcp", args.server_port)

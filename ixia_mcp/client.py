@@ -33,6 +33,7 @@ class IxNetworkConnection:
     ixnetwork: Any = field(init=False)
     created_at: float = field(default_factory=time.time)
     last_used_at: float = field(default_factory=time.time)
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
         self.ixnetwork = self.session_assistant.Ixnetwork
@@ -127,6 +128,19 @@ class ConnectionManager:
             )
         return conn
 
+    @staticmethod
+    def _cleanup_connection(conn: IxNetworkConnection) -> None:
+        """Release resources held by a connection."""
+        try:
+            if hasattr(conn.session_assistant, "Session") and hasattr(conn.session_assistant.Session, "remove"):
+                conn.session_assistant.Session.remove()
+            else:
+                conn.session_assistant = None  # type: ignore[assignment]
+                conn.ixnetwork = None
+            logger.info("Cleaned up session for connection_id=%s", conn.connection_id)
+        except Exception:
+            logger.warning("Failed to clean up session for connection_id=%s", conn.connection_id, exc_info=True)
+
     def disconnect(self, connection_id: str) -> None:
         """Remove a connection from the pool."""
         with self._lock:
@@ -135,15 +149,17 @@ class ConnectionManager:
             raise KeyError(
                 f"No active connection with id '{connection_id}'. Nothing to disconnect."
             )
+        self._cleanup_connection(conn)
         logger.info("Disconnected connection_id=%s", connection_id)
 
     def disconnect_all(self) -> None:
         """Disconnect all active connections (used during shutdown)."""
         with self._lock:
-            ids = list(self._connections.keys())
-            for cid in ids:
-                self._connections.pop(cid, None)
-        logger.info("Disconnected all connections (%d)", len(ids))
+            conns = list(self._connections.values())
+            self._connections.clear()
+        for conn in conns:
+            self._cleanup_connection(conn)
+        logger.info("Disconnected all connections (%d)", len(conns))
 
     def disconnect_stale(self, max_idle_seconds: int | None = None) -> list[str]:
         """Remove connections idle longer than *max_idle_seconds*.
@@ -152,12 +168,15 @@ class ConnectionManager:
         """
         threshold = max_idle_seconds if max_idle_seconds is not None else self.max_idle_seconds
         now = time.time()
-        reaped: list[str] = []
+        reaped_conns: list[IxNetworkConnection] = []
         with self._lock:
             for cid, conn in list(self._connections.items()):
                 if now - conn.last_used_at > threshold:
                     del self._connections[cid]
-                    reaped.append(cid)
+                    reaped_conns.append(conn)
+        for conn in reaped_conns:
+            self._cleanup_connection(conn)
+        reaped = [c.connection_id for c in reaped_conns]
         if reaped:
             logger.info("Reaped %d stale connection(s): %s", len(reaped), reaped)
         return reaped
